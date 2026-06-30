@@ -63,6 +63,8 @@
   .det-head .info { flex: 1; min-width: 0; }
   .det-head .nm { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
   .det-head .ad { color: var(--muted); font-size: 12.5px; word-break: break-all; }
+  .copy-ic { cursor: pointer; color: var(--muted-2); margin-left: 6px; display: inline-flex; vertical-align: middle; }
+  .copy-ic:hover { color: var(--accent); }
   .det-head .total { text-align: right; }
   .det-head .total .big { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
   .det-head .total .sub { font-size: 12px; color: var(--muted); }
@@ -161,6 +163,14 @@ async function api(path, opts={}){
   return r.json();
 }
 function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2300); }
+const COPY_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+function copyBtn(text){ return `<span class="copy-ic" title="复制地址" onclick="copyText('${text}',event)">${COPY_SVG}</span>`; }
+function copyText(t, ev){ if(ev) ev.stopPropagation();
+  const done=()=>toast("已复制地址");
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done));
+  else fallbackCopy(t,done);
+}
+function fallbackCopy(t,done){ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");done();}catch(e){} document.body.removeChild(ta); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
 function shortAddr(a,h=6,t=4){ return a.length<=h+t+1?a:a.slice(0,h)+"…"+a.slice(-t); }
 function fmt(x){ if(!x) return "0"; const a=Math.abs(x); if(a>=1e9) return (x/1e9).toFixed(2)+"B"; if(a>=1e6) return (x/1e6).toFixed(2)+"M"; if(a>=1) return (+x.toFixed(4)).toLocaleString(); if(a>=1e-4) return (+x.toFixed(6)).toString(); return x.toExponential(2); }
@@ -207,7 +217,7 @@ async function loadWallets(){
     return `<div class="wcard ${active?"active":""}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
-        <div class="ad mono">${shortAddr(w.address,8,6)}</div></div>
+        <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
       <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s">总值</div>
         <span class="x" title="移除" onclick='event.stopPropagation();removeWallet(${w.id})'>✕</span></div></div>`;
   }).join("");
@@ -281,7 +291,7 @@ async function refreshStream(){ const cur=sel; if(!cur) return; const tag=JSON.s
 function renderShell(){
   return `<div class="det-head"><div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
     <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span></div>
-    <div class="ad mono">${esc(sel.address)}</div></div></div><div class="spinner">读取链上数据…</div>`;
+    <div class="ad mono">${esc(sel.address)}${copyBtn(sel.address)}</div></div></div><div class="spinner">读取链上数据…</div>`;
 }
 function chainTabsHTML(){
   const port=cache.port; const usdByChain={}; if(port&&port.chains) port.chains.forEach(c=>usdByChain[c.chain]=c.usd);
@@ -316,7 +326,7 @@ function renderDetail(){
   const head=`<div class="det-head">
     <div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
     <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span></div>
-      <div class="ad mono">${esc(sel.address)}</div></div>
+      <div class="ad mono">${esc(sel.address)}${copyBtn(sel.address)}</div></div>
     <div class="total"><div class="big">${totalUsd!=null?usd(totalUsd):nativeStr}</div>
       <div class="sub">${isEvmM&&port&&!port.__err?`${tokenCount} 个代币 · ${(port.chains||[]).length} 条链`:(totalUsd!=null?nativeStr:"原生币余额")}</div></div></div>`;
 
