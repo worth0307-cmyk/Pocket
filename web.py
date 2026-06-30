@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 import analytics
 import chains
+from chains import portfolio as pf
 from chains.base import ActionsUnsupported, ChainError
 from config import Config
 from db import WalletDB
@@ -33,6 +34,7 @@ def _action_dict(a) -> dict:
         "type": a.action_type.value,
         "summary": a.summary,
         "explorer_url": a.explorer_url,
+        "token_contract": a.token_contract,
     }
 
 
@@ -100,7 +102,7 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         for cid in chains.supported_chain_ids():
             usable, reason = chains.chain_status(cid, config)
             out.append({"id": cid, "usable": usable, "reason": reason})
-        return {"chains": out}
+        return {"chains": out, "moralis": bool(config.moralis_api_key)}
 
     @app.get("/api/wallets")
     async def api_list(_: None = Depends(auth)) -> dict:
@@ -197,6 +199,47 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             d["value_usd"] = analytics.quote_value_usd(a, price)
             out.append(d)
         return {"actions": out}
+
+    def _evm_chains(chains_param: str | None) -> list[str]:
+        if chains_param:
+            req = [c.strip().lower() for c in chains_param.split(",") if c.strip()]
+            return [c for c in req if pf.is_supported(c)] or pf.DEFAULT_EVM_CHAINS
+        return pf.DEFAULT_EVM_CHAINS
+
+    def _require_moralis(address: str) -> None:
+        if not config.moralis_api_key:
+            raise HTTPException(
+                status_code=400, detail="未配置 MORALIS_API_KEY（仅影响代币持仓/多链聚合）"
+            )
+        from chains.evm import _ADDR_RE  # reuse EVM address validation
+        if not _ADDR_RE.match(address.strip()):
+            raise HTTPException(status_code=400, detail="地址格式不正确")
+
+    @app.get("/api/networth")
+    async def api_networth(
+        address: str, chains: str | None = None, _: None = Depends(auth)
+    ) -> dict:
+        _require_moralis(address)
+        try:
+            return await pf.evm_net_worth(
+                app.state.http, config.moralis_api_key,
+                address.strip().lower(), _evm_chains(chains),
+            )
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.get("/api/portfolio")
+    async def api_portfolio(
+        address: str, chains: str | None = None, _: None = Depends(auth)
+    ) -> dict:
+        _require_moralis(address)
+        try:
+            return await pf.evm_portfolio(
+                app.state.http, config.moralis_api_key,
+                address.strip().lower(), _evm_chains(chains),
+            )
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
     @app.get("/")
     async def index() -> FileResponse:

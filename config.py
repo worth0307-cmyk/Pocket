@@ -20,6 +20,7 @@ class Config:
     allowed_chat_ids: set[str]   # chats allowed to control the bot (empty = any)
     etherscan_api_key: str
     helius_api_key: str
+    moralis_api_key: str
     poll_interval: int           # seconds between auto-tracking polls
     db_path: str
     max_alerts_per_poll: int     # cap alerts per wallet per poll to avoid floods
@@ -66,6 +67,7 @@ def load_config() -> Config:
         allowed_chat_ids=allowed,
         etherscan_api_key=_clean(os.getenv("ETHERSCAN_API_KEY")),
         helius_api_key=_clean(os.getenv("HELIUS_API_KEY")),
+        moralis_api_key=_clean(os.getenv("MORALIS_API_KEY")),
         poll_interval=poll,
         db_path=_clean(os.getenv("DB_PATH")) or "wallets.db",
         max_alerts_per_poll=10,
