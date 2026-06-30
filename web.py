@@ -1,0 +1,172 @@
+"""FastAPI dashboard (Arkham-style dark UI) over the same backend as the bot.
+
+Runs in its own thread / event loop with its own httpx client, and shares the
+thread-safe ``WalletDB`` with the Telegram bot. Read endpoints query balances
+and action history on demand; write endpoints manage the watch-list.
+"""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+import chains
+from chains.base import ActionsUnsupported, ChainError
+from config import Config
+from db import WalletDB
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _action_dict(a) -> dict:
+    return {
+        "chain": a.chain,
+        "tx_hash": a.tx_hash,
+        "timestamp": a.timestamp,
+        "type": a.action_type.value,
+        "summary": a.summary,
+        "explorer_url": a.explorer_url,
+    }
+
+
+def _balance_dict(b) -> dict:
+    return {
+        "chain": b.chain,
+        "address": b.address,
+        "native_symbol": b.native_symbol,
+        "native_amount": b.native_amount,
+        "tokens": [
+            {"symbol": t.symbol, "amount": t.amount, "contract": t.contract}
+            for t in b.tokens
+        ],
+        "extra": b.extra,
+    }
+
+
+def _wallet_dict(w) -> dict:
+    return {
+        "id": w.id,
+        "chain": w.chain,
+        "address": w.address,
+        "label": w.label,
+        "added_at": w.added_at,
+    }
+
+
+class AddWallet(BaseModel):
+    chain: str
+    address: str
+    label: str = ""
+
+
+def create_web_app(config: Config, db: WalletDB) -> FastAPI:
+    app = FastAPI(title="Wallet Tracker", docs_url=None, redoc_url=None)
+
+    @app.on_event("startup")
+    async def _startup() -> None:
+        app.state.http = httpx.AsyncClient()
+
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:
+        await app.state.http.aclose()
+
+    def auth(request: Request) -> None:
+        """Optional shared-token gate (header X-Auth-Token or ?token=)."""
+        if not config.web_token:
+            return
+        token = request.headers.get("x-auth-token") or request.query_params.get("token")
+        if token != config.web_token:
+            raise HTTPException(status_code=401, detail="unauthorized")
+
+    def _client(chain: str):
+        client = chains.get_client(chain, config, app.state.http)
+        if client is None:
+            _, reason = chains.chain_status(chain, config)
+            raise HTTPException(status_code=400, detail=f"链 {chain} 不可用：{reason}")
+        return client
+
+    @app.get("/api/chains")
+    async def api_chains(_: None = Depends(auth)) -> dict:
+        out = []
+        for cid in chains.supported_chain_ids():
+            usable, reason = chains.chain_status(cid, config)
+            out.append({"id": cid, "usable": usable, "reason": reason})
+        return {"chains": out}
+
+    @app.get("/api/wallets")
+    async def api_list(_: None = Depends(auth)) -> dict:
+        return {"wallets": [_wallet_dict(w) for w in db.list_wallets()]}
+
+    @app.post("/api/wallets")
+    async def api_add(body: AddWallet, _: None = Depends(auth)) -> dict:
+        chain = body.chain.lower().strip()
+        client = _client(chain)
+        if not client.is_valid_address(body.address):
+            raise HTTPException(status_code=400, detail="地址格式不正确")
+        norm = client.normalize_address(body.address)
+        created, wallet = db.add_wallet(
+            chain, norm, body.label.strip(), config.alert_chat_id
+        )
+        if created:
+            try:
+                actions = await client.get_actions(norm, limit=1)
+                if actions:
+                    db.set_cursor(wallet.id, actions[0].tx_hash)
+            except (ActionsUnsupported, ChainError):
+                pass
+        return {"created": created, "wallet": _wallet_dict(wallet)}
+
+    @app.delete("/api/wallets/{wallet_id}")
+    async def api_remove(wallet_id: int, _: None = Depends(auth)) -> dict:
+        removed = db.remove_by_id(wallet_id)
+        if not removed:
+            raise HTTPException(status_code=404, detail="未找到")
+        return {"removed": _wallet_dict(removed)}
+
+    @app.get("/api/balance")
+    async def api_balance(
+        chain: str, address: str, _: None = Depends(auth)
+    ) -> dict:
+        client = _client(chain.lower())
+        if not client.is_valid_address(address):
+            raise HTTPException(status_code=400, detail="地址格式不正确")
+        try:
+            bal = await client.get_balance(address)
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        return _balance_dict(bal)
+
+    @app.get("/api/history")
+    async def api_history(
+        chain: str,
+        address: str,
+        limit: int = Query(15, ge=1, le=50),
+        _: None = Depends(auth),
+    ) -> dict:
+        client = _client(chain.lower())
+        if not client.is_valid_address(address):
+            raise HTTPException(status_code=400, detail="地址格式不正确")
+        try:
+            actions = await client.get_actions(address, limit=limit)
+        except ActionsUnsupported as exc:
+            return JSONResponse(
+                {"actions": [], "note": str(exc)}, status_code=200
+            )
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        return {"actions": [_action_dict(a) for a in actions]}
+
+    @app.get("/")
+    async def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    if STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    return app

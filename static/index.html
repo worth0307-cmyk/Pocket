@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wallet Tracker</title>
+<style>
+  :root {
+    --bg: #0a0b0d;
+    --panel: #111316;
+    --panel-2: #15181c;
+    --border: #1f242b;
+    --text: #e7eaf0;
+    --muted: #8b929e;
+    --accent: #00d2a8;
+    --buy: #2ecc71;
+    --sell: #ff5d5d;
+    --swap: #c792ea;
+    --in: #4aa3ff;
+    --out: #ffb454;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 80% -10%, #0e1418 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: rgba(10,11,13,.85);
+    backdrop-filter: blur(8px); z-index: 5;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent); }
+  .brand small { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+
+  .wrap { display: grid; grid-template-columns: 340px 1fr; gap: 20px; padding: 20px 24px; max-width: 1320px; margin: 0 auto; }
+  @media (max-width: 880px) { .wrap { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
+    margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .panel .body { padding: 14px 16px; }
+
+  input, select, button, textarea { font: inherit; color: var(--text); }
+  input, select {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 9px; padding: 9px 11px; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  label.fld { display: block; margin-bottom: 10px; }
+  label.fld span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button {
+    background: var(--accent); color: #04201a; border: none; border-radius: 9px;
+    padding: 9px 14px; font-weight: 700; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.ghost:hover { color: var(--text); border-color: var(--accent); }
+  button.danger { background: transparent; color: var(--sell); border: 1px solid #3a2326; padding: 4px 9px; font-size: 12px; }
+
+  .wallet { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer;
+    border: 1px solid transparent; }
+  .wallet:hover { background: var(--panel-2); }
+  .wallet.active { background: var(--panel-2); border-color: var(--accent); }
+  .chip { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; text-transform: uppercase;
+    background: #1b2026; color: var(--accent); letter-spacing: .5px; }
+  .wallet .meta { flex: 1; min-width: 0; }
+  .wallet .meta .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wallet .meta .ad { color: var(--muted); font-size: 12px; }
+
+  .empty { color: var(--muted); text-align: center; padding: 26px 10px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+    padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 11px 12px; border-bottom: 1px solid #15191e; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #0f1216; }
+  .badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; white-space: nowrap; }
+  .b-BUY { color: var(--buy); background: rgba(46,204,113,.12); }
+  .b-SELL { color: var(--sell); background: rgba(255,93,93,.12); }
+  .b-SWAP { color: var(--swap); background: rgba(199,146,234,.12); }
+  .b-TRANSFER_IN { color: var(--in); background: rgba(74,163,255,.12); }
+  .b-TRANSFER_OUT { color: var(--out); background: rgba(255,180,84,.12); }
+  .b-OTHER { color: var(--muted); background: #1a1e24; }
+  .t-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .token-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #15191e; }
+  .token-row:last-child { border-bottom: none; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .spinner { color: var(--muted); padding: 24px; text-align: center; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--panel-2); border: 1px solid var(--border); padding: 10px 16px; border-radius: 10px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .hd { display:flex; align-items:center; justify-content: space-between; gap: 10px; }
+  .addr-full { color: var(--muted); font-size: 12px; word-break: break-all; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot"></span> Wallet&nbsp;Tracker <small>· 链上钱包跟踪</small></div>
+    <div id="chainStatus" class="mono" style="color:var(--muted);font-size:12px"></div>
+  </header>
+
+  <div class="wrap">
+    <!-- LEFT: watch-list + add + search -->
+    <div>
+      <div class="panel" style="margin-bottom:16px">
+        <h2>添加钱包</h2>
+        <div class="body">
+          <div class="row" style="margin-bottom:10px">
+            <select id="addChain" style="flex:.7"></select>
+            <input id="addLabel" placeholder="备注（可选）" style="flex:1.3" />
+          </div>
+          <label class="fld"><input id="addAddress" placeholder="钱包地址" /></label>
+          <button onclick="addWallet()" style="width:100%">+ 添加跟踪</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <h2>快速查询（不加入清单）</h2>
+        <div class="body">
+          <div class="row" style="margin-bottom:10px">
+            <select id="qChain" style="flex:.7"></select>
+            <input id="qAddress" placeholder="地址" style="flex:1.6" />
+          </div>
+          <button class="ghost" style="width:100%" onclick="quickLookup()">查询</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>跟踪清单 <span id="wcount" style="color:var(--accent)"></span></h2>
+        <div class="body" id="walletList"><div class="spinner">加载中…</div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: detail -->
+    <div class="panel" style="align-self:start">
+      <h2>钱包详情</h2>
+      <div class="body" id="detail">
+        <div class="empty">从左侧选择一个钱包，或使用快速查询。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = localStorage.getItem("wt_token") || "";
+function hdrs() { return TOKEN ? { "X-Auth-Token": TOKEN, "Content-Type": "application/json" } : { "Content-Type": "application/json" }; }
+async function api(path, opts={}) {
+  const res = await fetch(path, { headers: hdrs(), ...opts });
+  if (res.status === 401) { const t = prompt("需要访问令牌 (WEB_TOKEN):"); if (t) { localStorage.setItem("wt_token", t); location.reload(); } throw new Error("unauthorized"); }
+  if (!res.ok) { const e = await res.json().catch(()=>({detail:res.statusText})); throw new Error(e.detail || "error"); }
+  return res.json();
+}
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 2200); }
+function shortAddr(a, h=6, t=4) { return a.length <= h+t+1 ? a : a.slice(0,h)+"…"+a.slice(-t); }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function fmt(x){ if(!x) return "0"; const ax=Math.abs(x); if(ax>=1e6) return x.toLocaleString(undefined,{maximumFractionDigits:0}); if(ax>=1) return (+x.toFixed(4)).toString(); if(ax>=1e-4) return (+x.toFixed(6)).toString(); return x.toExponential(2); }
+function ago(ts){ if(!ts) return ""; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+"s"; if(s<3600) return Math.floor(s/60)+"m"; if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
+const TYPE_LABEL={BUY:"买入",SELL:"卖出",SWAP:"兑换",TRANSFER_IN:"转入",TRANSFER_OUT:"转出",OTHER:"其他"};
+
+let CHAINS = [];
+let selected = null;
+
+async function loadChains() {
+  const data = await api("/api/chains");
+  CHAINS = data.chains;
+  const opts = CHAINS.map(c => `<option value="${c.id}" ${c.usable?"":"disabled"}>${c.id.toUpperCase()}${c.usable?"":" (未配置)"}</option>`).join("");
+  document.getElementById("addChain").innerHTML = opts;
+  document.getElementById("qChain").innerHTML = opts;
+  const ok = CHAINS.filter(c=>c.usable).map(c=>c.id.toUpperCase()).join(" · ");
+  document.getElementById("chainStatus").textContent = "可用链: " + (ok||"无");
+}
+
+async function loadWallets() {
+  const data = await api("/api/wallets");
+  const list = document.getElementById("walletList");
+  document.getElementById("wcount").textContent = data.wallets.length ? "("+data.wallets.length+")" : "";
+  if (!data.wallets.length) { list.innerHTML = '<div class="empty">还没有跟踪任何钱包</div>'; return; }
+  list.innerHTML = data.wallets.map(w => `
+    <div class="wallet ${selected && selected.chain===w.chain && selected.address===w.address ? "active":""}"
+         onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
+      <span class="chip">${w.chain}</span>
+      <div class="meta">
+        <div class="nm">${esc(w.label || shortAddr(w.address))}</div>
+        <div class="ad mono">${shortAddr(w.address, 8, 6)}</div>
+      </div>
+      <button class="danger" onclick="event.stopPropagation(); removeWallet(${w.id})">移除</button>
+    </div>`).join("");
+}
+
+async function addWallet() {
+  const chain = document.getElementById("addChain").value;
+  const address = document.getElementById("addAddress").value.trim();
+  const label = document.getElementById("addLabel").value.trim();
+  if (!address) return toast("请输入地址");
+  try {
+    const r = await api("/api/wallets", { method:"POST", body: JSON.stringify({chain, address, label}) });
+    toast(r.created ? "已添加" : "已在清单中");
+    document.getElementById("addAddress").value=""; document.getElementById("addLabel").value="";
+    await loadWallets();
+    selectWallet(r.wallet);
+  } catch(e){ toast(e.message); }
+}
+
+async function removeWallet(id) {
+  try { await api("/api/wallets/"+id, { method:"DELETE" }); toast("已移除"); await loadWallets(); }
+  catch(e){ toast(e.message); }
+}
+
+function selectWallet(w) {
+  selected = w;
+  loadWallets();
+  renderDetail(w.chain, w.address, w.label || "");
+}
+function quickLookup() {
+  const chain = document.getElementById("qChain").value;
+  const address = document.getElementById("qAddress").value.trim();
+  if (!address) return toast("请输入地址");
+  selected = null; loadWallets();
+  renderDetail(chain, address, "");
+}
+
+async function renderDetail(chain, address, label) {
+  const d = document.getElementById("detail");
+  d.innerHTML = `
+    <div class="hd" style="margin-bottom:14px">
+      <div>
+        <div style="font-size:16px;font-weight:700">${esc(label||"未命名")} <span class="chip">${chain}</span></div>
+        <div class="addr-full mono">${esc(address)}</div>
+      </div>
+    </div>
+    <div id="balBox"><div class="spinner">读取余额…</div></div>
+    <div style="height:18px"></div>
+    <div class="panel" style="background:var(--panel-2)">
+      <h2>动作轨迹</h2>
+      <div id="histBox"><div class="spinner">读取交易…</div></div>
+    </div>`;
+
+  api(`/api/balance?chain=${chain}&address=${encodeURIComponent(address)}`)
+    .then(b => { document.getElementById("balBox").innerHTML = balHTML(b); })
+    .catch(e => { document.getElementById("balBox").innerHTML = `<div class="note">余额查询失败：${esc(e.message)}</div>`; });
+
+  api(`/api/history?chain=${chain}&address=${encodeURIComponent(address)}&limit=25`)
+    .then(h => { document.getElementById("histBox").innerHTML = histHTML(h); })
+    .catch(e => { document.getElementById("histBox").innerHTML = `<div class="note" style="padding:14px">交易查询失败：${esc(e.message)}</div>`; });
+}
+
+function balHTML(b) {
+  let stats = `<div class="stat"><div class="k">余额</div><div class="v">${fmt(b.native_amount)} <small>${esc(b.native_symbol)}</small></div></div>`;
+  if (b.extra && b.extra.tx_count != null)
+    stats += `<div class="stat"><div class="k">历史交易数</div><div class="v">${b.extra.tx_count}</div></div>`;
+  let tokens = "";
+  if (b.tokens && b.tokens.length) {
+    tokens = `<div class="stat" style="grid-column:1/-1"><div class="k" style="margin-bottom:6px">代币持仓 (${b.tokens.length})</div>` +
+      b.tokens.map(t=>`<div class="token-row"><span>${esc(t.symbol)}</span><span class="mono">${fmt(t.amount)}</span></div>`).join("") + `</div>`;
+  }
+  let note = (b.extra && b.extra.note) ? `<div class="note">${esc(b.extra.note)}</div>` : "";
+  return `<div class="stat-grid">${stats}${tokens}</div>${note}`;
+}
+
+function histHTML(h) {
+  if (h.note) return `<div class="note" style="padding:14px">${esc(h.note)}</div>`;
+  if (!h.actions || !h.actions.length) return `<div class="empty">暂无可解析的交易</div>`;
+  const rows = h.actions.map(a => `
+    <tr>
+      <td><span class="badge b-${a.type}">${TYPE_LABEL[a.type]||a.type}</span></td>
+      <td>${esc(a.summary)}</td>
+      <td class="t-time">${ago(a.timestamp)}前</td>
+      <td><a href="${a.explorer_url}" target="_blank" rel="noopener">↗</a></td>
+    </tr>`).join("");
+  return `<table><thead><tr><th>类型</th><th>详情</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+(async function init(){
+  try { await loadChains(); await loadWallets(); }
+  catch(e){ document.getElementById("walletList").innerHTML = `<div class="note">加载失败：${esc(e.message)}</div>`; }
+})();
+</script>
+</body>
+</html>
