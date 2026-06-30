@@ -7,7 +7,7 @@ and action history on demand; write endpoints manage the watch-list.
 
 from __future__ import annotations
 
-import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -66,15 +66,17 @@ class AddWallet(BaseModel):
 
 
 def create_web_app(config: Config, db: WalletDB) -> FastAPI:
-    app = FastAPI(title="Wallet Tracker", docs_url=None, redoc_url=None)
-
-    @app.on_event("startup")
-    async def _startup() -> None:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         app.state.http = httpx.AsyncClient()
+        try:
+            yield
+        finally:
+            await app.state.http.aclose()
 
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
-        await app.state.http.aclose()
+    app = FastAPI(
+        title="Wallet Tracker", docs_url=None, redoc_url=None, lifespan=lifespan
+    )
 
     def auth(request: Request) -> None:
         """Optional shared-token gate (header X-Auth-Token or ?token=)."""
