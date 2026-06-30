@@ -9,9 +9,12 @@ Docs: https://docs.moralis.com/web3-data-api/evm
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import httpx
 
 from .base import ChainError
+from .evm import EVM_CHAINS as _EVM_META
 
 MORALIS_BASE = "https://deep-index.moralis.io/api/v2.2"
 
@@ -53,6 +56,15 @@ async def _get(http: httpx.AsyncClient, key: str, path: str, params) -> dict:
         raise
     except (httpx.HTTPError, ValueError) as exc:
         raise ChainError(f"moralis request failed: {exc}") from exc
+
+
+def _parse_ts(s: str | None) -> int:
+    if not s:
+        return 0
+    try:
+        return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
+    except (ValueError, AttributeError):
+        return 0
 
 
 def _amount(t: dict) -> float:
@@ -140,4 +152,70 @@ async def evm_portfolio(
         "chains": chain_list,
         "tokens": tokens,
         "spam_contracts": sorted(spam),
+    }
+
+
+async def evm_swaps(
+    http: httpx.AsyncClient, key: str, address: str, chains: list[str], limit: int = 40
+) -> dict:
+    """Only the wallet's DEX buy/sell swaps, with token, amount, price and USD.
+
+    Uses Moralis' parsed swaps endpoint, which already labels each trade as a
+    buy or a sell and provides per-unit USD price + total USD value — far more
+    accurate than inferring trades from raw transfers.
+    """
+    out: list[dict] = []
+    for c in chains:
+        mc = MORALIS_CHAIN.get(c)
+        if not mc:
+            continue
+        try:
+            data = await _get(
+                http, key, f"/wallets/{address}/swaps",
+                [("chain", mc), ("order", "DESC"), ("limit", str(limit))],
+            )
+        except ChainError:
+            continue
+        explorer = _EVM_META.get(c, {}).get("explorer", "")
+        for s in data.get("result", []) or []:
+            ttype = (s.get("transaction_type") or "").lower()
+            if ttype not in ("buy", "sell"):
+                continue
+            leg = (s.get("bought") if ttype == "buy" else s.get("sold")) or {}
+            try:
+                amount = abs(float(leg.get("amount") or 0))
+            except (TypeError, ValueError):
+                amount = 0.0
+            price = float(leg["usd_price"]) if leg.get("usd_price") else None
+            try:
+                value = float(s.get("total_value_usd") or leg.get("usd_amount") or 0)
+            except (TypeError, ValueError):
+                value = 0.0
+            txh = s.get("transaction_hash", "")
+            out.append({
+                "chain": c,
+                "type": "BUY" if ttype == "buy" else "SELL",
+                "token_symbol": leg.get("symbol") or "?",
+                "token_amount": amount,
+                "price_usd": price,
+                "value_usd": value,
+                "timestamp": _parse_ts(s.get("block_timestamp")),
+                "tx_hash": txh,
+                "explorer_url": f"{explorer}/tx/{txh}" if explorer and txh else "",
+            })
+    out.sort(key=lambda x: x["timestamp"], reverse=True)
+    out = out[:limit]
+    bought = sum(s["value_usd"] for s in out if s["type"] == "BUY")
+    sold = sum(s["value_usd"] for s in out if s["type"] == "SELL")
+    buys = sum(1 for s in out if s["type"] == "BUY")
+    return {
+        "swaps": out,
+        "stats": {
+            "buys": buys,
+            "sells": len(out) - buys,
+            "bought_usd": bought,
+            "sold_usd": sold,
+            "realized_pnl_usd": sold - bought,
+            "window": len(out),
+        },
     }

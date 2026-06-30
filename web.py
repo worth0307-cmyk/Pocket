@@ -241,6 +241,22 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
 
+    @app.get("/api/swaps")
+    async def api_swaps(
+        address: str,
+        chains: str | None = None,
+        limit: int = Query(40, ge=1, le=100),
+        _: None = Depends(auth),
+    ) -> dict:
+        _require_moralis(address)
+        try:
+            return await pf.evm_swaps(
+                app.state.http, config.moralis_api_key,
+                address.strip().lower(), _evm_chains(chains), limit,
+            )
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
     @app.get("/")
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")

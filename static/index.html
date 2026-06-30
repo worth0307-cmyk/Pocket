@@ -149,9 +149,9 @@ const CAT_LABEL = {evm:"EVM",sol:"Solana",btc:"Bitcoin"};
 const TOKEN = localStorage.getItem("wt_token") || "";
 let CHAINS = [], MORALIS = false;
 let sel = null;           // {chain,address,label,category}
-let activeTab = "tx", hideSpam = true;
+let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
 let timer = null, autoOn = true;
-let cache = { port:null, bal:null, hist:null, pnl:null, updated:0 };
+let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, updated:0 };
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -225,7 +225,7 @@ function queryAddress(add){
   const cat=detectCategory(address); if(!cat) return toast("无法识别该地址格式");
   const chain = cat==="evm" ? firstUsableEvm() : cat;
   if(!chainUsable(chain)) return toast(cat==="evm"?"请先在 .env 配置 ETHERSCAN_API_KEY":"该链未配置 API Key");
-  sel={chain,address,label:"",category:cat}; activeTab="tx";
+  sel={chain,address,label:"",category:cat}; activeTab="tx"; chainFilter=null;
   if(add) doAdd(chain,address); else { loadWallets(); openDetail(true); }
 }
 async function doAdd(chain,address){
@@ -234,13 +234,18 @@ async function doAdd(chain,address){
   }catch(e){ toast(e.message); }
 }
 async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
-function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; loadWallets(); openDetail(true); }
-function switchChain(id){ if(!sel) return; sel.chain=id; if(sel.category==="evm"&&MORALIS) refreshStream(); else openDetail(true); }
+function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; loadWallets(); openDetail(true); }
+function switchChain(id){ if(!sel) return;
+  if(sel.category==="evm"&&MORALIS){ chainFilter=(chainFilter===id?null:id); renderDetail(); }
+  else { sel.chain=id; openDetail(true); } }
+function setChainFilter(v){ chainFilter=v; renderDetail(); }
 
 function stopTimer(){ if(timer){clearInterval(timer);timer=null;} }
 function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(refreshStream,30000); }
 function toggleAuto(on){ autoOn=on; startTimer(); }
 function toggleSpam(on){ hideSpam=on; renderDetail(); }
+function toggleOnlyTrades(on){ onlyTrades=on; renderDetail(); }
+function swapStats(list){ let b=0,s=0,bu=0,se=0; (list||[]).forEach(x=>{ if(x.type==="BUY"){b+=x.value_usd;bu++} else {s+=x.value_usd;se++} }); return {buys:bu,sells:se,bought_usd:b,sold_usd:s,realized_pnl_usd:s-b,window:(list||[]).length}; }
 
 async function openDetail(skel){
   if(!sel) return; const cur=sel;
@@ -259,6 +264,13 @@ async function loadAll(cur){
   cache.updated=Date.now(); renderDetail();
 }
 async function loadStreamInto(cur){
+  if(cur.category==="evm" && MORALIS){
+    cache.hist=null; cache.pnl=null;
+    try{ cache.swaps=await api(`/api/swaps?address=${encodeURIComponent(cur.address)}&limit=60`); }
+    catch(e){ cache.swaps={__err:e.message}; }
+    return;
+  }
+  cache.swaps=null;
   const q=`chain=${cur.chain}&address=${encodeURIComponent(cur.address)}`;
   const [h,p]=await Promise.allSettled([api(`/api/history?${q}&limit=40`), api(`/api/pnl?${q}&limit=50`)]);
   cache.hist=h.status==="fulfilled"?h.value:{__err:h.reason?.message};
@@ -273,24 +285,32 @@ function renderShell(){
 }
 function chainTabsHTML(){
   const port=cache.port; const usdByChain={}; if(port&&port.chains) port.chains.forEach(c=>usdByChain[c.chain]=c.usd);
-  const tabs=EVM_CHAINS.filter(chainUsable).map(id=>{
+  const isM = sel.category==="evm"&&MORALIS;
+  let chips=EVM_CHAINS.filter(chainUsable).map(id=>{
     const u=usdByChain[id]; const utxt=(u!=null&&u>0)?`<span class="u">${usd(u)}</span>`:"";
-    return `<span class="chain-tab ${sel.chain===id?"active":""}" onclick="switchChain('${id}')">${id.toUpperCase()}${utxt}</span>`;
+    const active = isM ? chainFilter===id : sel.chain===id;
+    return `<span class="chain-tab ${active?"active":""}" onclick="switchChain('${id}')">${id.toUpperCase()}${utxt}</span>`;
   }).join("");
-  return `<div class="chain-tabs"><span style="color:var(--muted);font-size:12px;margin-right:4px">链分布（点击切换动作流）</span>${tabs}</div>`;
+  if(isM) chips = `<span class="chain-tab ${chainFilter==null?"active":""}" onclick="setChainFilter(null)">全部</span>` + chips;
+  return `<div class="chain-tabs"><span style="color:var(--muted);font-size:12px;margin-right:4px">链分布（点击筛选）</span>${chips}</div>`;
 }
 
 function renderDetail(){
   if(!sel) return;
   const isEvmM = sel.category==="evm" && MORALIS;
-  const port=cache.port, b=cache.bal, h=cache.hist, p=cache.pnl;
+  const port=cache.port, b=cache.bal, h=cache.hist;
+
+  let swaps=(isEvmM && cache.swaps && cache.swaps.swaps) ? cache.swaps.swaps : [];
+  const fswaps = chainFilter ? swaps.filter(s=>s.chain===chainFilter) : swaps;
+  const stats = isEvmM ? swapStats(fswaps)
+    : (cache.pnl&&cache.pnl.available ? {buys:cache.pnl.buys,sells:cache.pnl.sells,realized_pnl_usd:cache.pnl.realized_pnl_usd,window:cache.pnl.window} : null);
 
   let totalUsd=null, nativeStr="—", tokenCount=null;
   if(isEvmM && port && !port.__err){ totalUsd=port.total_usd; tokenCount=(port.tokens||[]).length; }
   else if(b && !b.__err){ totalUsd=b.extra?b.extra.total_usd:null; nativeStr=`${fmt(b.native_amount)} ${esc(b.native_symbol)}`; }
 
-  const realized=(p&&p.available)?p.realized_pnl_usd:null;
-  const hasTrades=p&&p.available&&(p.buys||p.sells);
+  const realized = stats? stats.realized_pnl_usd : null;
+  const hasTrades = stats && (stats.buys||stats.sells);
   const pnlCls=realized==null?"":(realized>=0?"pos":"neg");
 
   const head=`<div class="det-head">
@@ -305,24 +325,43 @@ function renderDetail(){
   const stat2 = isEvmM
     ? `<div class="stat"><div class="k">代币种类</div><div class="v">${tokenCount!=null?tokenCount:"—"}</div></div>`
     : `<div class="stat"><div class="k">原生币</div><div class="v">${b&&!b.__err?fmt(b.native_amount):"—"} <small>${b&&!b.__err?esc(b.native_symbol):""}</small></div></div>`;
-  const stats=`<div class="stats">
+  const pnlScope = isEvmM ? (chainFilter?chainFilter.toUpperCase():"全链") : sel.chain.toUpperCase();
+  const stats_html=`<div class="stats">
     <div class="stat"><div class="k">钱包总值</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
     ${stat2}
-    <div class="stat"><div class="k">已实现盈亏 <span class="help" title="基于近期可见交易：原生币腿按当前价、稳定币腿按$1估算，仅供参考。">?</span></div>
-      <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"} <small>${sel.chain.toUpperCase()}</small></div></div>
-    <div class="stat"><div class="k">买/卖（近${p&&p.window?p.window:0}笔）</div><div class="v">${p&&p.available?`${p.buys}/${p.sells}`:"—"}</div></div></div>`;
+    <div class="stat"><div class="k">已实现盈亏 <span class="help" title="按成交时 USD：卖出回款 − 买入成本（近期可见买卖），仅供参考。">?</span></div>
+      <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"} <small>${pnlScope}</small></div></div>
+    <div class="stat"><div class="k">买/卖（近${stats?stats.window:0}笔）</div><div class="v">${stats?`${stats.buys}/${stats.sells}`:"—"}</div></div></div>`;
 
   const last=cache.updated?`更新于 ${ago(Math.floor(cache.updated/1000))}前`:"";
-  const spamToggle = activeTab==="tx" ? `<label class="switch"><input type="checkbox" ${hideSpam?"checked":""} onchange="toggleSpam(this.checked)"> 隐藏垃圾</label>` : "";
+  const histToggles = (activeTab==="tx" && !isEvmM) ?
+    `<label class="switch"><input type="checkbox" ${onlyTrades?"checked":""} onchange="toggleOnlyTrades(this.checked)"> 只看买卖</label>
+     <label class="switch"><input type="checkbox" ${hideSpam?"checked":""} onchange="toggleSpam(this.checked)"> 隐藏垃圾</label>` : "";
   const tabs=`<div class="tabs">
     <div class="tab ${activeTab==="tx"?"active":""}" onclick="switchTab('tx')">动作流</div>
     <div class="tab ${activeTab==="pf"?"active":""}" onclick="switchTab('pf')">持仓</div>
-    <div class="tabbar-right"><span>${last}</span>${spamToggle}
+    <div class="tabbar-right"><span>${last}</span>${histToggles}
       <label class="switch"><input type="checkbox" ${autoOn?"checked":""} onchange="toggleAuto(this.checked)"> 自动刷新</label>
       <button class="btn-ghost refresh-btn" onclick="openDetail(false)">↻ 刷新</button></div></div>`;
 
-  const body=activeTab==="tx"?renderTx(h):(isEvmM?renderPortfolioMoralis(port):renderBalance(b));
-  document.getElementById("detail").innerHTML=head+chainTabs+stats+tabs+`<div>${body}</div>`;
+  const body=activeTab==="tx"
+    ? (isEvmM ? renderSwaps(fswaps, cache.swaps&&cache.swaps.__err) : renderHistory(h))
+    : (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b));
+  document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
+}
+
+function renderSwaps(list, err){
+  if(err) return `<div class="note">买卖查询失败：${esc(err)}（需 MORALIS_API_KEY）</div>`;
+  if(!list||!list.length) return `<div class="note">该钱包近期没有买卖（DEX 兑换）记录${chainFilter?`（${chainFilter.toUpperCase()}）`:""}。</div>`;
+  const rows=list.map(s=>`<tr>
+    <td><span class="badge b-${s.type}">${s.type==="BUY"?"买入":"卖出"}</span></td>
+    <td><b>${esc(s.token_symbol)}</b> <span class="chip">${s.chain}</span></td>
+    <td class="amt-cell">${fmt(s.token_amount)}</td>
+    <td>${s.price_usd!=null?"$"+(+s.price_usd).toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</td>
+    <td class="amt-cell">${usd(s.value_usd)}</td>
+    <td class="t-time">${ago(s.timestamp)}前</td>
+    <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`).join("");
+  return `<table><thead><tr><th>类型</th><th>币种</th><th>数量</th><th>价格</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderPortfolioMoralis(port){
@@ -347,22 +386,21 @@ function renderBalance(b){
     <div class="amt"><div class="v">${["USDC","USDT","DAI","BUSD"].includes(t.symbol.toUpperCase())?usd(t.amount):"—"}</div></div></div>`; });
   return rows + (b.extra&&b.extra.note?`<div class="note">${esc(b.extra.note)}</div>`:"");
 }
-function renderTx(h){
+function renderHistory(h){
   if(!h||h.__err) return `<div class="note">交易查询失败：${esc(h&&h.__err||"未知错误")}</div>`;
   if(h.note) return `<div class="note">${esc(h.note)}</div>`;
   let acts=h.actions||[];
   const spam=new Set((cache.port&&cache.port.spam_contracts)||[]);
-  let hidden=0;
-  if(hideSpam && spam.size){ const before=acts.length; acts=acts.filter(a=>!(a.token_contract&&spam.has(a.token_contract))); hidden=before-acts.length; }
-  if(!acts.length) return `<div class="note">暂无可解析的交易记录。${hidden?`（已隐藏 ${hidden} 条垃圾）`:""}</div>`;
+  if(hideSpam && spam.size) acts=acts.filter(a=>!(a.token_contract&&spam.has(a.token_contract)));
+  if(onlyTrades) acts=acts.filter(a=>a.type==="BUY"||a.type==="SELL");
+  if(!acts.length) return `<div class="note">${onlyTrades?"近期无买卖记录（取消勾选「只看买卖」可看全部动作）":"暂无可解析的交易记录"}。</div>`;
   const rows=acts.map(a=>`<tr>
     <td><span class="badge b-${a.type}">${TYPE_LABEL[a.type]||a.type}</span></td>
     <td>${esc(a.summary)}</td>
     <td class="amt-cell">${a.value_usd!=null?`<span class="usd">≈</span>${usd(a.value_usd)}`:"—"}</td>
     <td class="t-time">${ago(a.timestamp)}前</td>
     <td><a href="${a.explorer_url}" target="_blank" rel="noopener">↗</a></td></tr>`).join("");
-  const foot = hidden?`<div class="note">已隐藏 ${hidden} 条疑似垃圾币转账。</div>`:"";
-  return `<table><thead><tr><th>类型</th><th>详情（币种·数量·计价）</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>${foot}`;
+  return `<table><thead><tr><th>类型</th><th>详情（币种·数量·计价）</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function switchTab(t){ activeTab=t; renderDetail(); }
 
