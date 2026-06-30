@@ -186,7 +186,17 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             )
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
-        return {"actions": [_action_dict(a) for a in actions]}
+        # Attach a USD value to each BUY/SELL leg using the current native price.
+        prices = await analytics.native_usd_prices(
+            app.state.http, [client.native_symbol]
+        )
+        price = prices.get(client.native_symbol.upper())
+        out = []
+        for a in actions:
+            d = _action_dict(a)
+            d["value_usd"] = analytics.quote_value_usd(a, price)
+            out.append(d)
+        return {"actions": out}
 
     @app.get("/")
     async def index() -> FileResponse:

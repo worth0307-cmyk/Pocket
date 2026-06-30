@@ -16,6 +16,15 @@ from chains.prices import native_usd_prices
 _STABLE_SYMBOLS = {"USDC", "USDT", "DAI", "BUSD"}
 
 
+def quote_value_usd(action: Action, native_price: float | None) -> float | None:
+    """USD value of a BUY/SELL's money leg (cost for BUY, proceeds for SELL)."""
+    if action.quote_kind is None:
+        return None
+    if action.quote_kind == "native":
+        return action.quote_amount * native_price if native_price else None
+    return action.quote_amount  # stablecoin leg ~ USD
+
+
 async def enrich_balance_usd(balance: Balance, http: httpx.AsyncClient) -> Balance:
     """Add native USD price / value and a best-effort total USD to ``balance``."""
     prices = await native_usd_prices(http, [balance.native_symbol])
