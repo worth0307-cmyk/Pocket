@@ -43,9 +43,13 @@
   .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px;
     margin: 4px 2px 12px; display: flex; justify-content: space-between; }
   .section-title .count { color: var(--accent); }
-  .wcard { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex;
+  .wcard { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex;
     align-items: center; gap: 12px; cursor: pointer; margin-bottom: 12px; box-shadow: var(--shadow); transition: border-color .15s; }
   .wcard:hover { border-color: var(--accent-2); }
+  .wdel { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+    color: var(--muted-2); background: #fff; border: 1px solid var(--border); cursor: pointer; opacity: 0; transition: opacity .12s, color .12s, border-color .12s; }
+  .wcard:hover .wdel { opacity: 1; }
+  .wdel:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
   .wcard.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; }
   .wcard .info { flex: 1; min-width: 0; }
@@ -98,6 +102,10 @@
   .b-TRANSFER_IN { color: var(--blue); background: rgba(59,130,246,.12); }
   .b-TRANSFER_OUT { color: var(--orange); background: rgba(245,166,35,.14); }
   .b-OTHER { color: var(--muted); background: #f0f1f4; }
+  .b-open-long { color: var(--green); background: rgba(46,189,133,.12); }
+  .b-close-long { color: var(--orange); background: rgba(245,166,35,.16); }
+  .b-open-short { color: var(--red); background: rgba(232,83,75,.12); }
+  .b-close-short { color: var(--blue); background: rgba(59,130,246,.12); }
   .usd { color: var(--muted); font-weight: 600; }
   .amt-cell { font-weight: 700; white-space: nowrap; }
   .t-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -173,6 +181,7 @@ async function api(path, opts={}){
 function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2300); }
 const COPY_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 function copyBtn(text){ return `<span class="copy-ic" title="复制地址" onclick="copyText('${text}',event)">${COPY_SVG}</span>`; }
+const TRASH_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>';
 function copyText(t, ev){ if(ev) ev.stopPropagation();
   const done=()=>toast("已复制地址");
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done));
@@ -226,8 +235,8 @@ async function loadWallets(){
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
         <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
-      <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s" id="wpnl-${w.id}">总值</div>
-        <span class="x" title="移除" onclick='event.stopPropagation();removeWallet(${w.id})'>✕</span></div></div>`;
+      <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s" id="wpnl-${w.id}">总值</div></div>
+      <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
   }).join("");
   d.wallets.forEach(async w=>{
     const el=document.getElementById("wbal-"+w.id); if(!el) return;
@@ -452,20 +461,28 @@ function renderTradeSummary(list){
   return `<div class="summary-block"><div class="summary-head">币种汇总（近 ${list.length} 笔买卖）</div>
     <table><thead><tr><th>币种</th><th>买/卖笔数</th><th>净数量</th><th>已实现盈亏</th><th>当前持仓(HL)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+function tradeBadge(s){
+  const d=s.dir||"";
+  if(/open\s*long/i.test(d)) return {t:"开多",c:"b-open-long"};
+  if(/close\s*long/i.test(d)) return {t:"平多",c:"b-close-long"};
+  if(/open\s*short/i.test(d)) return {t:"开空",c:"b-open-short"};
+  if(/close\s*short/i.test(d)) return {t:"平空",c:"b-close-short"};
+  return s.type==="BUY" ? {t:"买入",c:"b-BUY"} : {t:"卖出",c:"b-SELL"};
+}
 function renderTrades(list, err){
   if(!list || !list.length){
     if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
     return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
   }
   const rows=list.map(s=>{
+    const bd=tradeBadge(s);
     const venueChip = s.venue==='HL'
       ? `<span class="chip" title="Hyperliquid 永续/现货成交">⚡HL</span>`
       : `<span class="chip">${(s.venue||s.chain||'').toUpperCase()}</span>`;
-    const dir = s.dir ? ` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(dirCN(s.dir))}</span>` : '';
     const pnl = (s.closed_pnl!=null && s.closed_pnl!==0) ? ` · <span class="${s.closed_pnl>=0?'pos':'neg'}">${(s.closed_pnl>=0?'+':'')+usd(s.closed_pnl)}</span>` : '';
     return `<tr>
-      <td><span class="badge b-${s.type}">${s.type==="BUY"?"买入":"卖出"}</span></td>
-      <td><b>${esc(s.token_symbol)}</b> ${venueChip}${dir}</td>
+      <td><span class="badge ${bd.c}">${bd.t}</span></td>
+      <td><b>${esc(s.token_symbol)}</b> ${venueChip}</td>
       <td class="amt-cell">${fmt(s.token_amount)}</td>
       <td>${s.price_usd!=null?"$"+(+s.price_usd).toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</td>
       <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
