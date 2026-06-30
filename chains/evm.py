@@ -258,14 +258,24 @@ class EVMClient(ChainClient):
                     return f"{fmt_amount(stable_out[0][1])} {stable_out[0][0]}"
             return ""
 
+        quote_kind: str | None = None
+        quote_amount = 0.0
         if nonstable_in and spent_value:
             tok = nonstable_in[0]
             atype = ActionType.BUY
             summary = f"买入 {fmt_amount(tok[1])} {tok[0]}（花费 {value_leg(False)}）"
+            if native_out > 0:
+                quote_kind, quote_amount = "native", native_out
+            elif stable_out:
+                quote_kind, quote_amount = "stable", stable_out[0][1]
         elif nonstable_out and recv_value:
             tok = nonstable_out[0]
             atype = ActionType.SELL
             summary = f"卖出 {fmt_amount(tok[1])} {tok[0]}（换得 {value_leg(True)}）"
+            if native_in > 0:
+                quote_kind, quote_amount = "native", native_in
+            elif stable_in:
+                quote_kind, quote_amount = "stable", stable_in[0][1]
         elif nonstable_in and nonstable_out:
             ti, to = nonstable_in[0], nonstable_out[0]
             atype = ActionType.SWAP
@@ -308,4 +318,6 @@ class EVMClient(ChainClient):
             action_type=atype,
             summary=summary,
             explorer_url=self.explorer_tx(tx_hash),
+            quote_kind=quote_kind,
+            quote_amount=quote_amount,
         )

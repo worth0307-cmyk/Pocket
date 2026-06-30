@@ -24,12 +24,17 @@ def format_balance(bal: Balance, label: str = "") -> str:
     head = f"<b>{_esc(bal.chain.upper())}</b>"
     if label:
         head += f" · {_esc(label)}"
+    native_line = f"余额：<b>{fmt_amount(bal.native_amount)} {_esc(bal.native_symbol)}</b>"
+    if "native_usd" in bal.extra:
+        native_line += f"　≈ ${fmt_amount(bal.extra['native_usd'])}"
     lines = [
         f"💼 {head}",
         f"<code>{_esc(bal.address)}</code>",
         "",
-        f"余额：<b>{fmt_amount(bal.native_amount)} {_esc(bal.native_symbol)}</b>",
+        native_line,
     ]
+    if "total_usd" in bal.extra:
+        lines.append(f"估算总值：<b>${fmt_amount(bal.extra['total_usd'])}</b>")
     if bal.tokens:
         lines.append("")
         lines.append("代币持仓：")

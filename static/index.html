@@ -3,158 +3,187 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wallet Tracker</title>
+<title>Pocket · 链上钱包跟踪</title>
 <style>
   :root {
-    --bg: #0a0b0d;
-    --panel: #111316;
-    --panel-2: #15181c;
-    --border: #1f242b;
-    --text: #e7eaf0;
-    --muted: #8b929e;
-    --accent: #00d2a8;
-    --buy: #2ecc71;
-    --sell: #ff5d5d;
-    --swap: #c792ea;
-    --in: #4aa3ff;
-    --out: #ffb454;
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --border: #ececf1;
+    --text: #13141a;
+    --muted: #82838f;
+    --muted-2: #aeb0ba;
+    --accent: #ff6034;
+    --accent-2: #ff8a5b;
+    --accent-soft: #fff1ec;
+    --green: #2ebd85;
+    --red: #e8534b;
+    --swap: #8b5cf6;
+    --blue: #3b82f6;
+    --orange: #f5a623;
+    --shadow: 0 1px 2px rgba(20,21,26,.04), 0 8px 24px rgba(20,21,26,.05);
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0;
-    background: radial-gradient(1200px 600px at 80% -10%, #0e1418 0%, var(--bg) 60%);
-    color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "PingFang SC", "Microsoft YaHei", sans-serif;
     min-height: 100vh;
   }
   a { color: var(--accent); text-decoration: none; }
-  code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+  code, .mono { font-family: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
 
   header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: rgba(10,11,13,.85);
-    backdrop-filter: blur(8px); z-index: 5;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 10;
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
-  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
-    box-shadow: 0 0 12px var(--accent); }
-  .brand small { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -.2px; }
+  .logo .mark { width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center; color: #fff; font-weight: 900; box-shadow: 0 4px 12px rgba(255,96,52,.35); }
+  .logo small { color: var(--muted); font-weight: 500; font-size: 12px; }
+  header .hint { color: var(--muted); font-size: 12px; }
 
-  .wrap { display: grid; grid-template-columns: 340px 1fr; gap: 20px; padding: 20px 24px; max-width: 1320px; margin: 0 auto; }
-  @media (max-width: 880px) { .wrap { grid-template-columns: 1fr; } }
+  .container { max-width: 1280px; margin: 0 auto; padding: 22px 24px 60px; }
 
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
-  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
-    margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-  .panel .body { padding: 14px 16px; }
-
-  input, select, button, textarea { font: inherit; color: var(--text); }
-  input, select {
-    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 9px; padding: 9px 11px; outline: none;
+  /* search / add bar */
+  .searchbar { background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: var(--shadow); padding: 14px; display: flex; gap: 10px; align-items: center; margin-bottom: 22px; }
+  .searchbar select { flex: 0 0 130px; }
+  .searchbar .addr { flex: 1; }
+  select, input {
+    width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 11px;
+    background: #fbfbfd; color: var(--text); font: inherit; outline: none;
   }
-  input:focus, select:focus { border-color: var(--accent); }
-  label.fld { display: block; margin-bottom: 10px; }
-  label.fld span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-  .row { display: flex; gap: 8px; }
-  .row > * { flex: 1; }
-  button {
-    background: var(--accent); color: #04201a; border: none; border-radius: 9px;
-    padding: 9px 14px; font-weight: 700; cursor: pointer;
-  }
-  button:hover { filter: brightness(1.08); }
-  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-  button.ghost:hover { color: var(--text); border-color: var(--accent); }
-  button.danger { background: transparent; color: var(--sell); border: 1px solid #3a2326; padding: 4px 9px; font-size: 12px; }
+  input::placeholder { color: var(--muted-2); }
+  select:focus, input:focus { border-color: var(--accent); background: #fff; }
+  button { height: 44px; padding: 0 20px; border: none; border-radius: 11px; font: inherit; font-weight: 700;
+    cursor: pointer; white-space: nowrap; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+    box-shadow: 0 6px 16px rgba(255,96,52,.28); }
+  .btn-primary:hover { filter: brightness(1.04); }
+  .btn-ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .det-note { color: var(--orange); font-size: 12px; margin: -12px 2px 18px; }
 
-  .wallet { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer;
-    border: 1px solid transparent; }
-  .wallet:hover { background: var(--panel-2); }
-  .wallet.active { background: var(--panel-2); border-color: var(--accent); }
-  .chip { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; text-transform: uppercase;
-    background: #1b2026; color: var(--accent); letter-spacing: .5px; }
-  .wallet .meta { flex: 1; min-width: 0; }
-  .wallet .meta .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wallet .meta .ad { color: var(--muted); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 360px 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
 
-  .empty { color: var(--muted); text-align: center; padding: 26px 10px; }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .6px; margin: 4px 2px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .section-title .count { color: var(--accent); }
 
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-  .stat .k { color: var(--muted); font-size: 12px; }
-  .stat .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
-  .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
+  /* whale cards */
+  .wcard { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px;
+    display: flex; align-items: center; gap: 12px; cursor: pointer; margin-bottom: 12px; box-shadow: var(--shadow);
+    transition: border-color .15s, transform .1s; }
+  .wcard:hover { border-color: var(--accent-2); }
+  .wcard.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center;
+    color: #fff; font-weight: 800; font-size: 15px; }
+  .wcard .info { flex: 1; min-width: 0; }
+  .wcard .info .nm { font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .wcard .info .ad { color: var(--muted); font-size: 12px; }
+  .wcard .bal { text-align: right; }
+  .wcard .bal .v { font-weight: 800; }
+  .wcard .bal .s { color: var(--muted); font-size: 12px; }
+  .chip { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; text-transform: uppercase;
+    background: var(--accent-soft); color: var(--accent); letter-spacing: .4px; }
+  .x { margin-left: 6px; color: var(--muted-2); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+  .x:hover { color: var(--red); background: #fdecec; }
+
+  .empty { color: var(--muted); text-align: center; padding: 30px 12px; background: var(--card);
+    border: 1px dashed var(--border); border-radius: 14px; }
+
+  /* detail */
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+  .det-head { display: flex; align-items: center; gap: 14px; padding: 20px; border-bottom: 1px solid var(--border); }
+  .det-head .info { flex: 1; min-width: 0; }
+  .det-head .nm { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .det-head .ad { color: var(--muted); font-size: 12.5px; }
+  .det-head .total { text-align: right; }
+  .det-head .total .big { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
+  .det-head .total .sub { font-size: 12px; color: var(--muted); }
+  .pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+  .pill.pos { background: rgba(46,189,133,.12); }
+  .pill.neg { background: rgba(232,83,75,.12); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--card); padding: 16px 18px; }
+  .stat .k { color: var(--muted); font-size: 12px; display:flex; align-items:center; gap:4px; }
+  .stat .v { font-size: 20px; font-weight: 800; margin-top: 3px; }
+  .stat .v small { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .help { color: var(--muted-2); cursor: help; border: 1px solid var(--border); border-radius: 50%;
+    width: 14px; height: 14px; display: inline-grid; place-items: center; font-size: 10px; }
+
+  .tabs { display: flex; gap: 4px; padding: 12px 18px 0; border-bottom: 1px solid var(--border); }
+  .tab { padding: 9px 14px; font-weight: 700; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tabbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--muted); font-size: 12px; }
+  .switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .switch input { width: auto; height: auto; }
+  .refresh-btn { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
 
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
-    padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  td { padding: 11px 12px; border-bottom: 1px solid #15191e; vertical-align: middle; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+    padding: 10px 18px; border-bottom: 1px solid var(--border); font-weight: 700; }
+  td { padding: 13px 18px; border-bottom: 1px solid #f3f4f7; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #0f1216; }
-  .badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; white-space: nowrap; }
-  .b-BUY { color: var(--buy); background: rgba(46,204,113,.12); }
-  .b-SELL { color: var(--sell); background: rgba(255,93,93,.12); }
-  .b-SWAP { color: var(--swap); background: rgba(199,146,234,.12); }
-  .b-TRANSFER_IN { color: var(--in); background: rgba(74,163,255,.12); }
-  .b-TRANSFER_OUT { color: var(--out); background: rgba(255,180,84,.12); }
-  .b-OTHER { color: var(--muted); background: #1a1e24; }
+  tr:hover td { background: #fafafd; }
+  .badge { font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; white-space: nowrap; }
+  .b-BUY { color: var(--green); background: rgba(46,189,133,.12); }
+  .b-SELL { color: var(--red); background: rgba(232,83,75,.12); }
+  .b-SWAP { color: var(--swap); background: rgba(139,92,246,.12); }
+  .b-TRANSFER_IN { color: var(--blue); background: rgba(59,130,246,.12); }
+  .b-TRANSFER_OUT { color: var(--orange); background: rgba(245,166,35,.14); }
+  .b-OTHER { color: var(--muted); background: #f0f1f4; }
   .t-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .token-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #15191e; }
-  .token-row:last-child { border-bottom: none; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
-  .spinner { color: var(--muted); padding: 24px; text-align: center; }
-  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: var(--panel-2); border: 1px solid var(--border); padding: 10px 16px; border-radius: 10px;
-    opacity: 0; transition: opacity .25s; pointer-events: none; }
+
+  .pf-row { display: flex; align-items: center; gap: 12px; padding: 13px 18px; border-bottom: 1px solid #f3f4f7; }
+  .pf-row:last-child { border-bottom: none; }
+  .coin { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+    font-weight: 800; font-size: 12px; }
+  .pf-row .sym { font-weight: 700; flex: 1; }
+  .pf-row .amt { text-align: right; }
+  .pf-row .amt .u { color: var(--muted); font-size: 12px; }
+  .note { color: var(--muted); font-size: 12.5px; padding: 16px 18px; }
+  .spinner { color: var(--muted); padding: 26px; text-align: center; }
+  .body-pad { padding: 6px 0; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #fff; border: 1px solid var(--border); padding: 11px 18px; border-radius: 12px; box-shadow: var(--shadow);
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50; }
   .toast.show { opacity: 1; }
-  .hd { display:flex; align-items:center; justify-content: space-between; gap: 10px; }
-  .addr-full { color: var(--muted); font-size: 12px; word-break: break-all; }
 </style>
 </head>
 <body>
   <header>
-    <div class="brand"><span class="dot"></span> Wallet&nbsp;Tracker <small>· 链上钱包跟踪</small></div>
-    <div id="chainStatus" class="mono" style="color:var(--muted);font-size:12px"></div>
+    <div class="logo"><span class="mark">P</span> Pocket <small>· 链上钱包跟踪</small></div>
+    <div class="hint mono" id="chainStatus"></div>
   </header>
 
-  <div class="wrap">
-    <!-- LEFT: watch-list + add + search -->
-    <div>
-      <div class="panel" style="margin-bottom:16px">
-        <h2>添加钱包</h2>
-        <div class="body">
-          <div class="row" style="margin-bottom:10px">
-            <select id="addChain" style="flex:.7"></select>
-            <input id="addLabel" placeholder="备注（可选）" style="flex:1.3" />
-          </div>
-          <label class="fld"><input id="addAddress" placeholder="钱包地址" /></label>
-          <button onclick="addWallet()" style="width:100%">+ 添加跟踪</button>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px">
-        <h2>快速查询（不加入清单）</h2>
-        <div class="body">
-          <div class="row" style="margin-bottom:10px">
-            <select id="qChain" style="flex:.7"></select>
-            <input id="qAddress" placeholder="地址" style="flex:1.6" />
-          </div>
-          <button class="ghost" style="width:100%" onclick="quickLookup()">查询</button>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h2>跟踪清单 <span id="wcount" style="color:var(--accent)"></span></h2>
-        <div class="body" id="walletList"><div class="spinner">加载中…</div></div>
-      </div>
+  <div class="container">
+    <div class="searchbar">
+      <select id="chain"></select>
+      <input class="addr" id="address" placeholder="输入钱包地址（0x… / Solana / bc1…），回车查询" onkeydown="if(event.key==='Enter')quickLookup()" oninput="onAddrInput()" />
+      <button class="btn-ghost" onclick="quickLookup()">查询</button>
+      <button class="btn-primary" onclick="addWallet()">+ 跟踪</button>
     </div>
+    <div id="addrHint" class="det-note" style="display:none"></div>
 
-    <!-- RIGHT: detail -->
-    <div class="panel" style="align-self:start">
-      <h2>钱包详情</h2>
-      <div class="body" id="detail">
-        <div class="empty">从左侧选择一个钱包，或使用快速查询。</div>
+    <div class="grid">
+      <!-- watchlist -->
+      <div>
+        <div class="section-title">跟踪清单 <span class="count" id="wcount"></span></div>
+        <div id="walletList"><div class="spinner">加载中…</div></div>
+      </div>
+
+      <!-- detail -->
+      <div class="panel" id="detail">
+        <div class="empty" style="margin:0;border:none">从左侧选择钱包，或在上方输入地址查询。</div>
       </div>
     </div>
   </div>
@@ -162,137 +191,202 @@
   <div class="toast" id="toast"></div>
 
 <script>
+const EVM_CHAINS = ["eth","bsc","base","arb","polygon","op"];
+const TYPE_LABEL = {BUY:"买入",SELL:"卖出",SWAP:"兑换",TRANSFER_IN:"转入",TRANSFER_OUT:"转出",OTHER:"其他"};
 const TOKEN = localStorage.getItem("wt_token") || "";
-function hdrs() { return TOKEN ? { "X-Auth-Token": TOKEN, "Content-Type": "application/json" } : { "Content-Type": "application/json" }; }
-async function api(path, opts={}) {
-  const res = await fetch(path, { headers: hdrs(), ...opts });
-  if (res.status === 401) { const t = prompt("需要访问令牌 (WEB_TOKEN):"); if (t) { localStorage.setItem("wt_token", t); location.reload(); } throw new Error("unauthorized"); }
-  if (!res.ok) { const e = await res.json().catch(()=>({detail:res.statusText})); throw new Error(e.detail || "error"); }
-  return res.json();
-}
-function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 2200); }
-function shortAddr(a, h=6, t=4) { return a.length <= h+t+1 ? a : a.slice(0,h)+"…"+a.slice(-t); }
-function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
-function fmt(x){ if(!x) return "0"; const ax=Math.abs(x); if(ax>=1e6) return x.toLocaleString(undefined,{maximumFractionDigits:0}); if(ax>=1) return (+x.toFixed(4)).toString(); if(ax>=1e-4) return (+x.toFixed(6)).toString(); return x.toExponential(2); }
-function ago(ts){ if(!ts) return ""; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+"s"; if(s<3600) return Math.floor(s/60)+"m"; if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
-const TYPE_LABEL={BUY:"买入",SELL:"卖出",SWAP:"兑换",TRANSFER_IN:"转入",TRANSFER_OUT:"转出",OTHER:"其他"};
-
 let CHAINS = [];
-let selected = null;
+let sel = null;          // {chain,address,label}
+let activeTab = "pf";    // pf | tx
+let timer = null;        // auto-refresh
+let autoOn = true;
+let cache = { bal: null, hist: null, pnl: null, updated: 0 };
 
-async function loadChains() {
-  const data = await api("/api/chains");
-  CHAINS = data.chains;
-  const opts = CHAINS.map(c => `<option value="${c.id}" ${c.usable?"":"disabled"}>${c.id.toUpperCase()}${c.usable?"":" (未配置)"}</option>`).join("");
-  document.getElementById("addChain").innerHTML = opts;
-  document.getElementById("qChain").innerHTML = opts;
-  const ok = CHAINS.filter(c=>c.usable).map(c=>c.id.toUpperCase()).join(" · ");
-  document.getElementById("chainStatus").textContent = "可用链: " + (ok||"无");
+function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
+async function api(path, opts={}){
+  const r = await fetch(path, { headers: hdrs(), ...opts });
+  if(r.status===401){ const t=prompt("需要访问令牌 (WEB_TOKEN):"); if(t){localStorage.setItem("wt_token",t);location.reload();} throw new Error("unauthorized"); }
+  if(!r.ok){ const e=await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail||"error"); }
+  return r.json();
+}
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2200); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function shortAddr(a,h=6,t=4){ return a.length<=h+t+1?a:a.slice(0,h)+"…"+a.slice(-t); }
+function fmt(x){ if(!x) return "0"; const a=Math.abs(x); if(a>=1e6) return (x/1e6).toFixed(2)+"M"; if(a>=1) return (+x.toFixed(4)).toLocaleString(); if(a>=1e-4) return (+x.toFixed(6)).toString(); return x.toExponential(2); }
+function usd(x){ if(x==null) return "—"; const s=x<0?"-":""; const a=Math.abs(x); if(a>=1e9) return s+"$"+(a/1e9).toFixed(2)+"B"; if(a>=1e6) return s+"$"+(a/1e6).toFixed(2)+"M"; if(a>=1e3) return s+"$"+a.toLocaleString(undefined,{maximumFractionDigits:0}); return s+"$"+a.toLocaleString(undefined,{maximumFractionDigits:2}); }
+function ago(ts){ if(!ts) return ""; const s=Math.floor(Date.now()/1000-ts); if(s<60)return s+"s"; if(s<3600)return Math.floor(s/60)+"m"; if(s<86400)return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
+function hashHue(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h%360; }
+function avatarStyle(addr){ const h=hashHue(addr); return `background:linear-gradient(135deg,hsl(${h},75%,58%),hsl(${(h+50)%360},75%,52%))`; }
+
+async function loadChains(){
+  const d = await api("/api/chains"); CHAINS = d.chains;
+  document.getElementById("chain").innerHTML = CHAINS.map(c=>`<option value="${c.id}" ${c.usable?"":"disabled"}>${c.id.toUpperCase()}${c.usable?"":" · 未配置"}</option>`).join("");
+  const ok = CHAINS.filter(c=>c.usable && !c.reason).map(c=>c.id.toUpperCase());
+  document.getElementById("chainStatus").textContent = "可用链: " + (ok.join(" · ")||"仅 BTC，请配置 API Key");
+}
+function chainUsable(id){ const c=CHAINS.find(x=>x.id===id); return c && c.usable; }
+
+function onAddrInput(){
+  const v = document.getElementById("address").value.trim();
+  const hint = document.getElementById("addrHint");
+  if(/^0x[0-9a-fA-F]{40}$/.test(v)){
+    if(chainUsable("eth")){ document.getElementById("chain").value="eth"; hint.style.display="none"; }
+    else { hint.textContent="⚠️ 检测到 EVM(0x) 地址：需在 .env 配置免费的 ETHERSCAN_API_KEY 才能查询 EVM 链。"; hint.style.display="block"; }
+  } else if(/^(bc1|tb1|[13])/.test(v) && v.length>=26){ document.getElementById("chain").value="btc"; hint.style.display="none"; }
+  else { hint.style.display="none"; }
 }
 
-async function loadWallets() {
-  const data = await api("/api/wallets");
+async function loadWallets(){
+  const d = await api("/api/wallets");
+  document.getElementById("wcount").textContent = d.wallets.length ? "("+d.wallets.length+")" : "";
   const list = document.getElementById("walletList");
-  document.getElementById("wcount").textContent = data.wallets.length ? "("+data.wallets.length+")" : "";
-  if (!data.wallets.length) { list.innerHTML = '<div class="empty">还没有跟踪任何钱包</div>'; return; }
-  list.innerHTML = data.wallets.map(w => `
-    <div class="wallet ${selected && selected.chain===w.chain && selected.address===w.address ? "active":""}"
-         onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
-      <span class="chip">${w.chain}</span>
-      <div class="meta">
-        <div class="nm">${esc(w.label || shortAddr(w.address))}</div>
-        <div class="ad mono">${shortAddr(w.address, 8, 6)}</div>
+  if(!d.wallets.length){ list.innerHTML = '<div class="empty" style="border-style:dashed">还没有跟踪任何钱包<br><span style="font-size:12px;color:var(--muted-2)">上方输入地址后点「+ 跟踪」</span></div>'; return; }
+  list.innerHTML = d.wallets.map(w=>{
+    const active = sel && sel.chain===w.chain && sel.address===w.address;
+    const initial = (w.label||w.address).slice(0,1).toUpperCase();
+    return `<div class="wcard ${active?"active":""}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
+      <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
+      <div class="info">
+        <div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${w.chain}</span></div>
+        <div class="ad mono">${shortAddr(w.address,8,6)}</div>
       </div>
-      <button class="danger" onclick="event.stopPropagation(); removeWallet(${w.id})">移除</button>
-    </div>`).join("");
-}
-
-async function addWallet() {
-  const chain = document.getElementById("addChain").value;
-  const address = document.getElementById("addAddress").value.trim();
-  const label = document.getElementById("addLabel").value.trim();
-  if (!address) return toast("请输入地址");
-  try {
-    const r = await api("/api/wallets", { method:"POST", body: JSON.stringify({chain, address, label}) });
-    toast(r.created ? "已添加" : "已在清单中");
-    document.getElementById("addAddress").value=""; document.getElementById("addLabel").value="";
-    await loadWallets();
-    selectWallet(r.wallet);
-  } catch(e){ toast(e.message); }
-}
-
-async function removeWallet(id) {
-  try { await api("/api/wallets/"+id, { method:"DELETE" }); toast("已移除"); await loadWallets(); }
-  catch(e){ toast(e.message); }
-}
-
-function selectWallet(w) {
-  selected = w;
-  loadWallets();
-  renderDetail(w.chain, w.address, w.label || "");
-}
-function quickLookup() {
-  const chain = document.getElementById("qChain").value;
-  const address = document.getElementById("qAddress").value.trim();
-  if (!address) return toast("请输入地址");
-  selected = null; loadWallets();
-  renderDetail(chain, address, "");
-}
-
-async function renderDetail(chain, address, label) {
-  const d = document.getElementById("detail");
-  d.innerHTML = `
-    <div class="hd" style="margin-bottom:14px">
-      <div>
-        <div style="font-size:16px;font-weight:700">${esc(label||"未命名")} <span class="chip">${chain}</span></div>
-        <div class="addr-full mono">${esc(address)}</div>
-      </div>
-    </div>
-    <div id="balBox"><div class="spinner">读取余额…</div></div>
-    <div style="height:18px"></div>
-    <div class="panel" style="background:var(--panel-2)">
-      <h2>动作轨迹</h2>
-      <div id="histBox"><div class="spinner">读取交易…</div></div>
+      <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s">余额</div>
+        <span class="x" title="移除" onclick='event.stopPropagation();removeWallet(${w.id})'>✕</span></div>
     </div>`;
-
-  api(`/api/balance?chain=${chain}&address=${encodeURIComponent(address)}`)
-    .then(b => { document.getElementById("balBox").innerHTML = balHTML(b); })
-    .catch(e => { document.getElementById("balBox").innerHTML = `<div class="note">余额查询失败：${esc(e.message)}</div>`; });
-
-  api(`/api/history?chain=${chain}&address=${encodeURIComponent(address)}&limit=25`)
-    .then(h => { document.getElementById("histBox").innerHTML = histHTML(h); })
-    .catch(e => { document.getElementById("histBox").innerHTML = `<div class="note" style="padding:14px">交易查询失败：${esc(e.message)}</div>`; });
+  }).join("");
+  // lazily fill each card's balance (best-effort, native amount)
+  d.wallets.forEach(async w=>{
+    try{ const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`);
+      const el=document.getElementById("wbal-"+w.id); if(el) el.textContent = b.extra&&b.extra.total_usd!=null ? usd(b.extra.total_usd) : fmt(b.native_amount)+" "+b.native_symbol;
+    }catch(e){}
+  });
 }
 
-function balHTML(b) {
-  let stats = `<div class="stat"><div class="k">余额</div><div class="v">${fmt(b.native_amount)} <small>${esc(b.native_symbol)}</small></div></div>`;
-  if (b.extra && b.extra.tx_count != null)
-    stats += `<div class="stat"><div class="k">历史交易数</div><div class="v">${b.extra.tx_count}</div></div>`;
-  let tokens = "";
-  if (b.tokens && b.tokens.length) {
-    tokens = `<div class="stat" style="grid-column:1/-1"><div class="k" style="margin-bottom:6px">代币持仓 (${b.tokens.length})</div>` +
-      b.tokens.map(t=>`<div class="token-row"><span>${esc(t.symbol)}</span><span class="mono">${fmt(t.amount)}</span></div>`).join("") + `</div>`;
+async function addWallet(){
+  const chain=document.getElementById("chain").value, address=document.getElementById("address").value.trim();
+  if(!address) return toast("请输入地址");
+  try{ const r=await api("/api/wallets",{method:"POST",body:JSON.stringify({chain,address,label:""})});
+    toast(r.created?"已添加跟踪":"已在清单中"); await loadWallets(); selectWallet(r.wallet);
+  }catch(e){ toast(e.message); }
+}
+async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); if(sel) {} await loadWallets(); }catch(e){ toast(e.message); } }
+
+function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||""}; activeTab="pf"; loadWallets(); openDetail(true); }
+function quickLookup(){
+  const chain=document.getElementById("chain").value, address=document.getElementById("address").value.trim();
+  if(!address) return toast("请输入地址");
+  if(!chainUsable(chain)) return toast("该链未配置 API Key，无法查询");
+  sel={chain,address,label:""}; activeTab="pf"; loadWallets(); openDetail(true);
+}
+
+function stopTimer(){ if(timer){ clearInterval(timer); timer=null; } }
+function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(()=>refreshData(false), 30000); }
+
+async function openDetail(showSkeleton){
+  if(!sel) return;
+  const cur = sel;
+  if(showSkeleton){
+    document.getElementById("detail").innerHTML = renderShell();
   }
-  let note = (b.extra && b.extra.note) ? `<div class="note">${esc(b.extra.note)}</div>` : "";
-  return `<div class="stat-grid">${stats}${tokens}</div>${note}`;
+  startTimer();
+  await refreshData(true, cur);
 }
 
-function histHTML(h) {
-  if (h.note) return `<div class="note" style="padding:14px">${esc(h.note)}</div>`;
-  if (!h.actions || !h.actions.length) return `<div class="empty">暂无可解析的交易</div>`;
-  const rows = h.actions.map(a => `
-    <tr>
-      <td><span class="badge b-${a.type}">${TYPE_LABEL[a.type]||a.type}</span></td>
-      <td>${esc(a.summary)}</td>
-      <td class="t-time">${ago(a.timestamp)}前</td>
-      <td><a href="${a.explorer_url}" target="_blank" rel="noopener">↗</a></td>
-    </tr>`).join("");
+async function refreshData(force, cur){
+  cur = cur || sel; if(!cur) return;
+  const tag = JSON.stringify(cur);
+  const q = `chain=${cur.chain}&address=${encodeURIComponent(cur.address)}`;
+  const [bal, hist, pnl] = await Promise.allSettled([
+    api(`/api/balance?${q}`), api(`/api/history?${q}&limit=25`), api(`/api/pnl?${q}&limit=50`)
+  ]);
+  if(JSON.stringify(sel)!==tag) return; // selection changed mid-flight
+  cache = {
+    bal: bal.status==="fulfilled"?bal.value:{__err:bal.reason?.message},
+    hist: hist.status==="fulfilled"?hist.value:{__err:hist.reason?.message},
+    pnl: pnl.status==="fulfilled"?pnl.value:{available:false},
+    updated: Date.now()
+  };
+  renderDetail();
+}
+
+function renderShell(){
+  return `<div class="det-head"><div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
+    <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.chain}</span></div>
+    <div class="ad mono">${esc(sel.address)}</div></div></div>
+    <div class="spinner">读取链上数据…</div>`;
+}
+
+function renderDetail(){
+  if(!sel) return;
+  const b=cache.bal, h=cache.hist, p=cache.pnl;
+  const totalUsd = b && b.extra ? b.extra.total_usd : null;
+  const nativeStr = b&&!b.__err ? `${fmt(b.native_amount)} ${esc(b.native_symbol)}` : "—";
+  const realized = (p&&p.available)? p.realized_pnl_usd : null;
+  const hasTrades = p&&p.available&&(p.buys||p.sells);
+  const pnlCls = realized==null?"":(realized>=0?"pos":"neg");
+  const pnlPill = hasTrades ? `<span class="pill ${realized>=0?"pos":"neg"} ${realized>=0?"pos":"neg"}">${realized>=0?"▲":"▼"} ${usd(Math.abs(realized))}</span>` : "";
+
+  const head = `<div class="det-head">
+    <div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
+    <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.chain}</span></div>
+      <div class="ad mono">${esc(sel.address)}</div></div>
+    <div class="total"><div class="big">${totalUsd!=null?usd(totalUsd):nativeStr}</div>
+      <div class="sub">${totalUsd!=null?nativeStr:"原生币余额"}</div></div></div>`;
+
+  const stats = `<div class="stats">
+    <div class="stat"><div class="k">钱包总值</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
+    <div class="stat"><div class="k">原生币</div><div class="v">${b&&!b.__err?fmt(b.native_amount):"—"} <small>${b&&!b.__err?esc(b.native_symbol):""}</small></div></div>
+    <div class="stat"><div class="k">已实现盈亏 <span class="help" title="基于近期可见交易，原生币腿按当前价估算，稳定币腿按$1。仅供参考。">?</span></div>
+      <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"}</div></div>
+    <div class="stat"><div class="k">买/卖（近${p&&p.window?p.window:0}笔）</div><div class="v">${p&&p.available?`${p.buys}/${p.sells}`:"—"}</div></div>
+  </div>`;
+
+  const last = cache.updated?`更新于 ${ago(Math.floor(cache.updated/1000))}前`:"";
+  const tabs = `<div class="tabs">
+    <div class="tab ${activeTab==="pf"?"active":""}" onclick="switchTab('pf')">持仓</div>
+    <div class="tab ${activeTab==="tx"?"active":""}" onclick="switchTab('tx')">动作流</div>
+    <div class="tabbar-right">
+      <span id="lastUpd">${last}</span>
+      <label class="switch"><input type="checkbox" ${autoOn?"checked":""} onchange="toggleAuto(this.checked)"> 自动刷新</label>
+      <button class="btn-ghost refresh-btn" onclick="refreshData(true)">↻ 刷新</button>
+    </div></div>`;
+
+  const body = activeTab==="pf" ? renderPortfolio(b) : renderTx(h);
+  document.getElementById("detail").innerHTML = head + stats + tabs + `<div class="body-pad">${body}</div>`;
+}
+
+function renderPortfolio(b){
+  if(!b || b.__err) return `<div class="note">余额查询失败：${esc(b&&b.__err||"未知错误")}</div>`;
+  const price = b.extra&&b.extra.native_price;
+  let rows = `<div class="pf-row"><div class="coin" style="${avatarStyle(b.native_symbol)}">${esc(b.native_symbol.slice(0,3))}</div>
+    <div class="sym">${esc(b.native_symbol)} <span style="color:var(--muted);font-weight:500">原生币</span></div>
+    <div class="amt"><div>${fmt(b.native_amount)}</div><div class="u">${b.extra&&b.extra.native_usd!=null?usd(b.extra.native_usd):(price?usd(b.native_amount*price):"")}</div></div></div>`;
+  (b.tokens||[]).forEach(t=>{
+    rows += `<div class="pf-row"><div class="coin" style="${avatarStyle(t.symbol+ (t.contract||''))}">${esc(t.symbol.slice(0,3))}</div>
+      <div class="sym">${esc(t.symbol)}</div>
+      <div class="amt"><div>${fmt(t.amount)}</div><div class="u">${["USDC","USDT","DAI","BUSD"].includes(t.symbol.toUpperCase())?usd(t.amount):""}</div></div></div>`;
+  });
+  let note = b.extra&&b.extra.note ? `<div class="note">${esc(b.extra.note)}</div>` : "";
+  return rows + note;
+}
+
+function renderTx(h){
+  if(!h || h.__err) return `<div class="note">交易查询失败：${esc(h&&h.__err||"未知错误")}</div>`;
+  if(h.note) return `<div class="note">${esc(h.note)}</div>`;
+  if(!h.actions||!h.actions.length) return `<div class="note">暂无可解析的交易记录。</div>`;
+  const rows = h.actions.map(a=>`<tr>
+    <td><span class="badge b-${a.type}">${TYPE_LABEL[a.type]||a.type}</span></td>
+    <td>${esc(a.summary)}</td>
+    <td class="t-time">${ago(a.timestamp)}前</td>
+    <td><a href="${a.explorer_url}" target="_blank" rel="noopener">↗</a></td></tr>`).join("");
   return `<table><thead><tr><th>类型</th><th>详情</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+function switchTab(t){ activeTab=t; renderDetail(); }
+function toggleAuto(on){ autoOn=on; startTimer(); }
+
 (async function init(){
-  try { await loadChains(); await loadWallets(); }
-  catch(e){ document.getElementById("walletList").innerHTML = `<div class="note">加载失败：${esc(e.message)}</div>`; }
+  try{ await loadChains(); await loadWallets(); }
+  catch(e){ document.getElementById("walletList").innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`; }
 })();
 </script>
 </body>

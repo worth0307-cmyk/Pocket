@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import analytics
 import chains
 from chains.base import ActionsUnsupported, ChainError
 from config import Config
@@ -142,7 +143,30 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             bal = await client.get_balance(address)
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
+        await analytics.enrich_balance_usd(bal, app.state.http)
         return _balance_dict(bal)
+
+    @app.get("/api/pnl")
+    async def api_pnl(
+        chain: str,
+        address: str,
+        limit: int = Query(50, ge=1, le=100),
+        _: None = Depends(auth),
+    ) -> dict:
+        client = _client(chain.lower())
+        if not client.is_valid_address(address):
+            raise HTTPException(status_code=400, detail="地址格式不正确")
+        try:
+            actions = await client.get_actions(address, limit=limit)
+        except ActionsUnsupported as exc:
+            return JSONResponse({"available": False, "note": str(exc)})
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        result = await analytics.estimate_pnl(
+            actions, client.native_symbol, app.state.http
+        )
+        result["available"] = True
+        return result
 
     @app.get("/api/history")
     async def api_history(

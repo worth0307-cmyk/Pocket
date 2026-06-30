@@ -16,7 +16,9 @@
 | 余额信息 | 原生币余额；Solana 含 SPL 代币持仓；BTC 含历史交易数 |
 | 地址清单 | 增删查，按链分组，支持备注 |
 | 自动跟踪 + TG 提醒 | 定时轮询每个地址，发现新交易即推送到 Telegram |
-| 网页面板 | 深色 UI：清单 / 余额卡片 / 动作流，支持快速查询任意地址 |
+| 网页面板 | DeBank 风浅色 UI：清单 / 持仓 / 动作流，**动作流自动刷新（30s）**，支持快速查询 |
+| USD 估值 | 原生币 + 稳定币按 CoinGecko 免费价折算总值（无需 key） |
+| 盈亏估算 | 从近期可见交易估算已实现盈亏（买入成本 vs 卖出回款），仅供参考 |
 
 两个入口共用同一套后端与数据库：
 - **Telegram 机器人**：用命令管理清单、查余额、查动作，并接收自动提醒。
@@ -123,11 +125,13 @@ static/index.html  深色网页面板（单文件）
 config.py          环境配置
 db.py              SQLite 清单 + 跟踪游标
 formatting.py      Telegram 消息排版
+analytics.py       USD 估值 + 盈亏估算
 chains/            链适配层
   base.py          统一数据模型 / 接口
   evm.py           Etherscan V2（多 EVM 链）
   solana.py        Helius + Solana RPC
   bitcoin.py       mempool.space
+  prices.py        CoinGecko 免费价（USD 估值/盈亏）
   __init__.py      链注册 / 工厂
   util.py          base58 / 金额格式化
 ```
