@@ -77,6 +77,33 @@ async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 200) -
     return out[:limit]
 
 
+def _parse_clearinghouse(data, dex: str | None = None) -> tuple[float, list[dict]]:
+    """Extract (account_value, positions) from a clearinghouseState response."""
+    account_value = 0.0
+    positions: list[dict] = []
+    if isinstance(data, dict):
+        ms = data.get("marginSummary", {}) or {}
+        account_value = _f(ms.get("accountValue"))
+        for ap in data.get("assetPositions", []) or []:
+            p = ap.get("position", {}) or {}
+            szi = _f(p.get("szi"))
+            if szi == 0:
+                continue
+            coin = p.get("coin") or "?"
+            if dex and ":" not in coin:  # match the "dex:COIN" naming used in fills
+                coin = f"{dex}:{coin}"
+            positions.append({
+                "coin": coin,
+                "size": szi,
+                "side": "多" if szi > 0 else "空",
+                "value_usd": _f(p.get("positionValue")),
+                "entry_px": _f(p.get("entryPx")) if p.get("entryPx") else None,
+                "unrealized_pnl": _f(p.get("unrealizedPnl")),
+                "leverage": (p.get("leverage") or {}).get("value"),
+            })
+    return account_value, positions
+
+
 async def hyperliquid_state(
     http: httpx.AsyncClient, address: str, with_fills: bool = False
 ) -> dict:
@@ -84,30 +111,12 @@ async def hyperliquid_state(
 
     When ``with_fills`` is set, also include recent trades (buy/sell fills) so
     the action stream can show Hyperliquid activity, not just EVM DEX swaps.
+    Builder-deployed perps (HIP-3) live on separate sub-dexes and are included.
     """
     address = address.strip().lower()
 
-    perps = await _post(http, {"type": "clearinghouseState", "user": address})
-    account_value = 0.0
-    positions: list[dict] = []
-    if isinstance(perps, dict):
-        ms = perps.get("marginSummary", {}) or {}
-        account_value = _f(ms.get("accountValue"))
-        for ap in perps.get("assetPositions", []) or []:
-            p = ap.get("position", {}) or {}
-            szi = _f(p.get("szi"))
-            if szi == 0:
-                continue
-            lev = (p.get("leverage") or {}).get("value")
-            positions.append({
-                "coin": p.get("coin"),
-                "size": szi,
-                "side": "多" if szi > 0 else "空",
-                "value_usd": _f(p.get("positionValue")),
-                "entry_px": _f(p.get("entryPx")) if p.get("entryPx") else None,
-                "unrealized_pnl": _f(p.get("unrealizedPnl")),
-                "leverage": lev,
-            })
+    main = await _post(http, {"type": "clearinghouseState", "user": address})
+    account_value, positions = _parse_clearinghouse(main)
 
     # Spot balances (best effort; valued via mid prices where available).
     spot: list[dict] = []
@@ -130,15 +139,33 @@ async def hyperliquid_state(
     except ChainError:
         pass
 
-    positions.sort(key=lambda x: abs(x["value_usd"]), reverse=True)
-    spot.sort(key=lambda x: x["usd"], reverse=True)
-
     fills: list = []
     if with_fills:
         try:
             fills = await _user_fills(http, address)
         except ChainError:
             pass
+
+    # Builder-deployed perps (HIP-3): coin looks like "xyz:GOLD". The main
+    # clearinghouse omits them, so query each sub-dex seen in the fills.
+    dexes = set()
+    for f in fills:
+        coin = f.get("token_symbol") or ""
+        if ":" in coin:
+            dexes.add(coin.split(":")[0])
+    for dex in dexes:
+        try:
+            ch = await _post(
+                http, {"type": "clearinghouseState", "user": address, "dex": dex}
+            )
+        except ChainError:
+            continue
+        av, pos = _parse_clearinghouse(ch, dex=dex)
+        account_value += av
+        positions += pos
+
+    positions.sort(key=lambda x: abs(x["value_usd"]), reverse=True)
+    spot.sort(key=lambda x: x["usd"], reverse=True)
 
     unrealized_pnl = sum(p["unrealized_pnl"] for p in positions)
     realized_pnl = sum(f["closed_pnl"] for f in fills)
