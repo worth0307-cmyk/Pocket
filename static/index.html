@@ -153,6 +153,9 @@
 const EVM_CHAINS = ["eth","bsc","base","arb","polygon","op"];
 const TYPE_LABEL = {BUY:"买入",SELL:"卖出",SWAP:"兑换",TRANSFER_IN:"转入",TRANSFER_OUT:"转出",OTHER:"其他"};
 const CAT_LABEL = {evm:"EVM",sol:"Solana",btc:"Bitcoin"};
+const DIR_LABEL = {"Open Long":"开多","Close Long":"平多","Open Short":"开空","Close Short":"平空","Buy":"买入","Sell":"卖出"};
+function dirCN(d){ if(!d) return ""; if(DIR_LABEL[d]) return DIR_LABEL[d];
+  return d.replace(/Open/gi,"开").replace(/Close/gi,"平").replace(/Long/gi,"多").replace(/Short/gi,"空").replace(/Buy/gi,"买入").replace(/Sell/gi,"卖出"); }
 const TOKEN = localStorage.getItem("wt_token") || "";
 let CHAINS = [], MORALIS = false;
 let sel = null;           // {chain,address,label,category}
@@ -341,7 +344,7 @@ function chainTabsHTML(){
   }).join("");
   if(isM){
     chips = `<span class="chain-tab ${chainFilter==null?"active":""}" onclick="setChainFilter(null)">全部</span>` + chips;
-    if(cache.hl && cache.hl.total_usd) chips += `<span class="chain-tab ${chainFilter==='HL'?"active":""}" onclick="setChainFilter('HL')">⚡HL ${usd(cache.hl.total_usd)}</span>`;
+    if(cache.hl && cache.hl.total_usd) chips += `<span class="chain-tab ${chainFilter==='HL'?"active":""}" title="Hyperliquid（独立永续/现货 DEX）" onclick="setChainFilter('HL')">⚡HL ${usd(cache.hl.total_usd)}</span>`;
   }
   return `<div class="chain-tabs"><span style="color:var(--muted);font-size:12px;margin-right:4px">链分布（点击筛选）</span>${chips}</div>`;
 }
@@ -455,12 +458,14 @@ function renderTrades(list, err){
     return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
   }
   const rows=list.map(s=>{
-    const venue = s.venue==='HL' ? '⚡HL' : (s.venue||s.chain||'').toUpperCase();
-    const dir = s.dir ? ` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(s.dir)}</span>` : '';
+    const venueChip = s.venue==='HL'
+      ? `<span class="chip" title="Hyperliquid 永续/现货成交">⚡HL</span>`
+      : `<span class="chip">${(s.venue||s.chain||'').toUpperCase()}</span>`;
+    const dir = s.dir ? ` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(dirCN(s.dir))}</span>` : '';
     const pnl = (s.closed_pnl!=null && s.closed_pnl!==0) ? ` · <span class="${s.closed_pnl>=0?'pos':'neg'}">${(s.closed_pnl>=0?'+':'')+usd(s.closed_pnl)}</span>` : '';
     return `<tr>
       <td><span class="badge b-${s.type}">${s.type==="BUY"?"买入":"卖出"}</span></td>
-      <td><b>${esc(s.token_symbol)}</b> <span class="chip">${venue}</span>${dir}</td>
+      <td><b>${esc(s.token_symbol)}</b> ${venueChip}${dir}</td>
       <td class="amt-cell">${fmt(s.token_amount)}</td>
       <td>${s.price_usd!=null?"$"+(+s.price_usd).toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</td>
       <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
