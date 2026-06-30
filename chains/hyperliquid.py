@@ -122,11 +122,15 @@ async def hyperliquid_state(
         except ChainError:
             pass
 
+    unrealized_pnl = sum(p["unrealized_pnl"] for p in positions)
+    realized_pnl = sum(f["closed_pnl"] for f in fills)
     return {
         "account_value": account_value,
         "positions": positions,
         "spot": spot,
         "spot_usd": spot_usd,
         "total_usd": account_value + spot_usd,
+        "unrealized_pnl": unrealized_pnl,
+        "realized_pnl": realized_pnl,
         "fills": fills,
     }

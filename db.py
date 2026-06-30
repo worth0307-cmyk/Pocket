@@ -122,8 +122,9 @@ class WalletDB:
 
     def list_wallets(self) -> list[Wallet]:
         with self._lock:
+            # Newest-added first (highest id) so the latest wallet shows on top.
             rows = self._conn.execute(
-                "SELECT * FROM wallets ORDER BY chain, id"
+                "SELECT * FROM wallets ORDER BY id DESC"
             ).fetchall()
             return [self._row(r) for r in rows]
 

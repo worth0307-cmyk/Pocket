@@ -109,6 +109,8 @@
   .pf-row .amt { text-align: right; }
   .pf-row .amt .v { font-weight: 800; }
   .pf-row .amt .u { color: var(--muted); font-size: 12px; }
+  .summary-block { border-bottom: 8px solid var(--bg); }
+  .summary-head { padding: 11px 18px; font-weight: 700; color: var(--muted); font-size: 12px; letter-spacing: .4px; background: #fafbfd; border-bottom: 1px solid var(--border); }
   .hl-block { border-bottom: 8px solid var(--bg); }
   .hl-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 18px; font-weight: 800; background: #eefaf6; border-bottom: 1px solid var(--border); }
   .hl-head .hl-val { color: var(--muted); font-weight: 700; font-size: 13px; }
@@ -221,18 +223,20 @@ async function loadWallets(){
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
         <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
-      <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s">总值</div>
+      <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s" id="wpnl-${w.id}">总值</div>
         <span class="x" title="移除" onclick='event.stopPropagation();removeWallet(${w.id})'>✕</span></div></div>`;
   }).join("");
   d.wallets.forEach(async w=>{
     const el=document.getElementById("wbal-"+w.id); if(!el) return;
+    const pel=document.getElementById("wpnl-"+w.id);
     try{
       if(EVM_CHAINS.includes(w.chain)){
-        let total=0, have=false;
+        let total=0, have=false, upnl=0;
         if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
-        try{ const hh=await api(`/api/hyperliquid?address=${w.address}`); if(hh&&hh.total_usd){ total+=hh.total_usd; have=true; } }catch(e){}
+        try{ const hh=await api(`/api/hyperliquid?address=${w.address}`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; } upnl=hh.unrealized_pnl||0; } }catch(e){}
         if(have) el.textContent=usd(total);
         else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=fmt(b.native_amount)+" "+b.native_symbol; }
+        if(pel) pel.innerHTML = upnl ? `<span class="${upnl>=0?'pos':'neg'}">浮 ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
       } else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=b.extra&&b.extra.total_usd!=null?usd(b.extra.total_usd):fmt(b.native_amount)+" "+b.native_symbol; }
     }catch(e){ el.textContent="—"; }
   });
@@ -397,7 +401,7 @@ function renderDetail(){
       <button class="btn-ghost refresh-btn" onclick="openDetail(false)">↻ 刷新</button></div></div>`;
 
   const body=activeTab==="tx"
-    ? (isEvm ? renderTrades(fmerged, cache.swaps&&cache.swaps.__err) : renderHistory(h))
+    ? (isEvm ? (renderTradeSummary(fmerged) + renderTrades(fmerged, cache.swaps&&cache.swaps.__err)) : renderHistory(h))
     : (renderHL(cache.hl) + (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b)));
   document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
 }
@@ -419,6 +423,32 @@ function renderHL(hl){
   return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${ptable}${srows}</div>`;
 }
 
+function renderTradeSummary(list){
+  if(!list || !list.length) return "";
+  const m={};
+  list.forEach(t=>{
+    const k=t.token_symbol||'?';
+    const g=m[k]||(m[k]={coin:k,buys:0,sells:0,netAmt:0,buyVal:0,sellVal:0,realized:0});
+    if(t.type==="BUY"){ g.buys++; g.netAmt+=t.token_amount; g.buyVal+=t.value_usd; }
+    else { g.sells++; g.netAmt-=t.token_amount; g.sellVal+=t.value_usd; }
+    if(t.closed_pnl!=null) g.realized+=t.closed_pnl;
+  });
+  const pos={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>pos[p.coin]=p);
+  const coins=Object.values(m).sort((a,b)=>(b.buyVal+b.sellVal)-(a.buyVal+a.sellVal)).slice(0,8);
+  if(!coins.length) return "";
+  const rows=coins.map(g=>{
+    const p=pos[g.coin];
+    const posTxt = p ? `${p.side} ${fmt(Math.abs(p.size))} <span class="${p.unrealized_pnl>=0?'pos':'neg'}">(${(p.unrealized_pnl>=0?'+':'')+usd(p.unrealized_pnl)})</span>` : '—';
+    return `<tr>
+      <td><b>${esc(g.coin)}</b></td>
+      <td>${g.buys}/${g.sells}</td>
+      <td class="${g.netAmt>=0?'pos':'neg'}">${(g.netAmt>=0?'+':'')+fmt(g.netAmt)}</td>
+      <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td>
+      <td>${posTxt}</td></tr>`;
+  }).join("");
+  return `<div class="summary-block"><div class="summary-head">币种汇总（近 ${list.length} 笔买卖）</div>
+    <table><thead><tr><th>币种</th><th>买/卖笔数</th><th>净数量</th><th>已实现盈亏</th><th>当前持仓(HL)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 function renderTrades(list, err){
   if(!list || !list.length){
     if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
