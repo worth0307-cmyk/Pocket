@@ -259,7 +259,15 @@ function switchChain(id){ if(!sel) return;
 function setChainFilter(v){ chainFilter=v; renderDetail(); }
 
 function stopTimer(){ if(timer){clearInterval(timer);timer=null;} }
-function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(refreshStream,30000); }
+function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(refreshStream,60000); }
+function activeChains(){
+  const set=new Set();
+  if(sel && EVM_CHAINS.includes(sel.chain)) set.add(sel.chain);
+  const p=cache.port;
+  if(p && p.chains) p.chains.forEach(c=>{ if(EVM_CHAINS.includes(c.chain)) set.add(c.chain); });
+  const arr=[...set];
+  return arr.length?arr:["eth"];
+}
 function toggleAuto(on){ autoOn=on; startTimer(); }
 function toggleSpam(on){ hideSpam=on; renderDetail(); }
 function toggleOnlyTrades(on){ onlyTrades=on; renderDetail(); }
@@ -272,21 +280,33 @@ async function openDetail(skel){
 }
 async function loadAll(cur){
   cur=cur||sel; if(!cur) return; const tag=JSON.stringify(cur);
-  const isEvm = cur.category==="evm";
-  const tasks=[];
-  if(isEvm && MORALIS){ cache.bal=null; tasks.push(api(`/api/portfolio?address=${encodeURIComponent(cur.address)}`).then(d=>cache.port=d).catch(e=>cache.port={__err:e.message})); }
-  else { cache.port=null; tasks.push(api(`/api/balance?chain=${cur.chain}&address=${encodeURIComponent(cur.address)}`).then(d=>cache.bal=d).catch(e=>cache.bal={__err:e.message})); }
-  if(isEvm){ tasks.push(api(`/api/hyperliquid?address=${encodeURIComponent(cur.address)}`).then(d=>cache.hl=d).catch(e=>cache.hl=null)); }
-  else cache.hl=null;
-  tasks.push(loadStreamInto(cur));
-  await Promise.all(tasks);
+  const isEvm = cur.category==="evm", isEvmM = isEvm && MORALIS;
+  const addr=encodeURIComponent(cur.address);
+  if(isEvmM){
+    cache.bal=null;
+    // 先拿持仓（也据此得知哪几条链有余额），再只对这些链查买卖，省 CU
+    try{ cache.port=await api(`/api/portfolio?address=${addr}`); }catch(e){ cache.port={__err:e.message}; }
+    if(JSON.stringify(sel)!==tag) return;
+    cache.updated=Date.now(); renderDetail();
+    await Promise.all([
+      api(`/api/hyperliquid?address=${addr}`).then(d=>cache.hl=d).catch(e=>cache.hl=null),
+      loadStreamInto(cur),
+    ]);
+  } else {
+    cache.port=null;
+    const tasks=[ api(`/api/balance?chain=${cur.chain}&address=${addr}`).then(d=>cache.bal=d).catch(e=>cache.bal={__err:e.message}) ];
+    if(isEvm){ tasks.push(api(`/api/hyperliquid?address=${addr}`).then(d=>cache.hl=d).catch(e=>cache.hl=null)); } else cache.hl=null;
+    tasks.push(loadStreamInto(cur));
+    await Promise.all(tasks);
+  }
   if(JSON.stringify(sel)!==tag) return;
   cache.updated=Date.now(); renderDetail();
 }
 async function loadStreamInto(cur){
   if(cur.category==="evm" && MORALIS){
     cache.hist=null; cache.pnl=null;
-    try{ cache.swaps=await api(`/api/swaps?address=${encodeURIComponent(cur.address)}&limit=60`); }
+    const ac=activeChains().join(",");  // 只查有余额/常用的链
+    try{ cache.swaps=await api(`/api/swaps?address=${encodeURIComponent(cur.address)}&chains=${ac}&limit=20`); }
     catch(e){ cache.swaps={__err:e.message}; }
     return;
   }
