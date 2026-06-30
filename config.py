@@ -24,6 +24,7 @@ class Config:
     poll_interval: int           # seconds between auto-tracking polls
     db_path: str
     max_alerts_per_poll: int     # cap alerts per wallet per poll to avoid floods
+    bot_enabled: bool            # run the Telegram bot (set false for web-only)
     web_enabled: bool            # serve the FastAPI dashboard alongside the bot
     web_host: str
     web_port: int
@@ -54,12 +55,9 @@ def load_config() -> Config:
         web_port = int(_clean(os.getenv("WEB_PORT")) or "8000")
     except ValueError:
         web_port = 8000
-    web_enabled = (_clean(os.getenv("WEB_ENABLED")) or "true").lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+    _falsey = ("0", "false", "no", "off")
+    web_enabled = (_clean(os.getenv("WEB_ENABLED")) or "true").lower() not in _falsey
+    bot_enabled = (_clean(os.getenv("BOT_ENABLED")) or "true").lower() not in _falsey
 
     return Config(
         tg_token=token,
@@ -71,6 +69,7 @@ def load_config() -> Config:
         poll_interval=poll,
         db_path=_clean(os.getenv("DB_PATH")) or "wallets.db",
         max_alerts_per_poll=10,
+        bot_enabled=bot_enabled,
         web_enabled=web_enabled,
         web_host=_clean(os.getenv("WEB_HOST")) or "127.0.0.1",
         web_port=web_port,
