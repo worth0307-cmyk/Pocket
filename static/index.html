@@ -109,6 +109,9 @@
   .pf-row .amt { text-align: right; }
   .pf-row .amt .v { font-weight: 800; }
   .pf-row .amt .u { color: var(--muted); font-size: 12px; }
+  .hl-block { border-bottom: 8px solid var(--bg); }
+  .hl-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 18px; font-weight: 800; background: #eefaf6; border-bottom: 1px solid var(--border); }
+  .hl-head .hl-val { color: var(--muted); font-weight: 700; font-size: 13px; }
   .note { color: var(--muted); font-size: 12.5px; padding: 16px 18px; }
   .spinner { color: var(--muted); padding: 26px; text-align: center; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
@@ -153,7 +156,7 @@ let CHAINS = [], MORALIS = false;
 let sel = null;           // {chain,address,label,category}
 let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
 let timer = null, autoOn = true;
-let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, updated:0 };
+let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -224,8 +227,13 @@ async function loadWallets(){
   d.wallets.forEach(async w=>{
     const el=document.getElementById("wbal-"+w.id); if(!el) return;
     try{
-      if(EVM_CHAINS.includes(w.chain) && MORALIS){ const n=await api(`/api/networth?address=${w.address}`); el.textContent=usd(n.total_usd); }
-      else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=b.extra&&b.extra.total_usd!=null?usd(b.extra.total_usd):fmt(b.native_amount)+" "+b.native_symbol; }
+      if(EVM_CHAINS.includes(w.chain)){
+        let total=0, have=false;
+        if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
+        try{ const hh=await api(`/api/hyperliquid?address=${w.address}`); if(hh&&hh.total_usd){ total+=hh.total_usd; have=true; } }catch(e){}
+        if(have) el.textContent=usd(total);
+        else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=fmt(b.native_amount)+" "+b.native_symbol; }
+      } else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=b.extra&&b.extra.total_usd!=null?usd(b.extra.total_usd):fmt(b.native_amount)+" "+b.native_symbol; }
     }catch(e){ el.textContent="—"; }
   });
 }
@@ -268,6 +276,8 @@ async function loadAll(cur){
   const tasks=[];
   if(isEvm && MORALIS){ cache.bal=null; tasks.push(api(`/api/portfolio?address=${encodeURIComponent(cur.address)}`).then(d=>cache.port=d).catch(e=>cache.port={__err:e.message})); }
   else { cache.port=null; tasks.push(api(`/api/balance?chain=${cur.chain}&address=${encodeURIComponent(cur.address)}`).then(d=>cache.bal=d).catch(e=>cache.bal={__err:e.message})); }
+  if(isEvm){ tasks.push(api(`/api/hyperliquid?address=${encodeURIComponent(cur.address)}`).then(d=>cache.hl=d).catch(e=>cache.hl=null)); }
+  else cache.hl=null;
   tasks.push(loadStreamInto(cur));
   await Promise.all(tasks);
   if(JSON.stringify(sel)!==tag) return;
@@ -315,9 +325,11 @@ function renderDetail(){
   const stats = isEvmM ? swapStats(fswaps)
     : (cache.pnl&&cache.pnl.available ? {buys:cache.pnl.buys,sells:cache.pnl.sells,realized_pnl_usd:cache.pnl.realized_pnl_usd,window:cache.pnl.window} : null);
 
-  let totalUsd=null, nativeStr="—", tokenCount=null;
-  if(isEvmM && port && !port.__err){ totalUsd=port.total_usd; tokenCount=(port.tokens||[]).length; }
-  else if(b && !b.__err){ totalUsd=b.extra?b.extra.total_usd:null; nativeStr=`${fmt(b.native_amount)} ${esc(b.native_symbol)}`; }
+  let walletUsd=null, nativeStr="—", tokenCount=null;
+  if(isEvmM && port && !port.__err){ walletUsd=port.total_usd; tokenCount=(port.tokens||[]).length; }
+  else if(b && !b.__err){ walletUsd=b.extra?b.extra.total_usd:null; nativeStr=`${fmt(b.native_amount)} ${esc(b.native_symbol)}`; }
+  const hlUsd = cache.hl&&cache.hl.total_usd ? cache.hl.total_usd : 0;
+  const totalUsd = (walletUsd!=null||hlUsd>0) ? (walletUsd||0)+hlUsd : null;
 
   const realized = stats? stats.realized_pnl_usd : null;
   const hasTrades = stats && (stats.buys||stats.sells);
@@ -328,7 +340,7 @@ function renderDetail(){
     <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span></div>
       <div class="ad mono">${esc(sel.address)}${copyBtn(sel.address)}</div></div>
     <div class="total"><div class="big">${totalUsd!=null?usd(totalUsd):nativeStr}</div>
-      <div class="sub">${isEvmM&&port&&!port.__err?`${tokenCount} 个代币 · ${(port.chains||[]).length} 条链`:(totalUsd!=null?nativeStr:"原生币余额")}</div></div></div>`;
+      <div class="sub">${hlUsd>0?`钱包 ${usd(walletUsd||0)} · ⚡Hyperliquid ${usd(hlUsd)}`:(isEvmM&&port&&!port.__err?`${tokenCount} 个代币 · ${(port.chains||[]).length} 条链`:(walletUsd!=null?nativeStr:"原生币余额"))}</div></div></div>`;
 
   const chainTabs = sel.category==="evm" ? chainTabsHTML() : "";
 
@@ -337,7 +349,7 @@ function renderDetail(){
     : `<div class="stat"><div class="k">原生币</div><div class="v">${b&&!b.__err?fmt(b.native_amount):"—"} <small>${b&&!b.__err?esc(b.native_symbol):""}</small></div></div>`;
   const pnlScope = isEvmM ? (chainFilter?chainFilter.toUpperCase():"全链") : sel.chain.toUpperCase();
   const stats_html=`<div class="stats">
-    <div class="stat"><div class="k">钱包总值</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
+    <div class="stat"><div class="k">总资产${hlUsd>0?"（含HL）":""}</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
     ${stat2}
     <div class="stat"><div class="k">已实现盈亏 <span class="help" title="按成交时 USD：卖出回款 − 买入成本（近期可见买卖），仅供参考。">?</span></div>
       <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"} <small>${pnlScope}</small></div></div>
@@ -356,8 +368,25 @@ function renderDetail(){
 
   const body=activeTab==="tx"
     ? (isEvmM ? renderSwaps(fswaps, cache.swaps&&cache.swaps.__err) : renderHistory(h))
-    : (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b));
+    : (renderHL(cache.hl) + (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b)));
   document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
+}
+
+function renderHL(hl){
+  if(!hl || (!hl.account_value && !(hl.positions||[]).length && !(hl.spot||[]).length)) return "";
+  const prows=(hl.positions||[]).map(p=>`<tr>
+    <td><b>${esc(p.coin||'?')}</b></td>
+    <td><span class="badge ${p.side==='多'?'b-BUY':'b-SELL'}">${p.side}${p.leverage?` ${p.leverage}x`:''}</span></td>
+    <td class="amt-cell">${usd(p.value_usd)}</td>
+    <td class="amt-cell ${p.unrealized_pnl>=0?'pos':'neg'}">${(p.unrealized_pnl>=0?'+':'')+usd(p.unrealized_pnl)}</td>
+    <td class="t-time">${fmt(Math.abs(p.size))} ${esc(p.coin||'')}</td></tr>`).join("");
+  const ptable=(hl.positions||[]).length
+    ? `<table><thead><tr><th>币种</th><th>方向/杠杆</th><th>仓位价值</th><th>未实现盈亏</th><th>数量</th></tr></thead><tbody>${prows}</tbody></table>`
+    : `<div class="note">无永续持仓</div>`;
+  const srows=(hl.spot||[]).map(s=>`<div class="pf-row"><div class="coin" style="${avatarStyle(s.coin)}">${esc((s.coin||'?').slice(0,3))}</div>
+    <div class="sym">${esc(s.coin||'?')} <span class="chip">HL现货</span><div class="sub2">${fmt(s.amount)}</div></div>
+    <div class="amt"><div class="v">${s.usd?usd(s.usd):"—"}</div></div></div>`).join("");
+  return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${ptable}${srows}</div>`;
 }
 
 function renderSwaps(list, err){

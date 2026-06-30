@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 import analytics
 import chains
+from chains import hyperliquid as hl
 from chains import portfolio as pf
 from chains.base import ActionsUnsupported, ChainError
 from config import Config
@@ -238,6 +239,16 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 app.state.http, config.moralis_api_key,
                 address.strip().lower(), _evm_chains(chains),
             )
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.get("/api/hyperliquid")
+    async def api_hyperliquid(address: str, _: None = Depends(auth)) -> dict:
+        from chains.evm import _ADDR_RE
+        if not _ADDR_RE.match(address.strip()):
+            raise HTTPException(status_code=400, detail="地址格式不正确")
+        try:
+            return await hl.hyperliquid_state(app.state.http, address)
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
 
