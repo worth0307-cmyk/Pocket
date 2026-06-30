@@ -243,12 +243,16 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             raise HTTPException(status_code=502, detail=str(exc))
 
     @app.get("/api/hyperliquid")
-    async def api_hyperliquid(address: str, _: None = Depends(auth)) -> dict:
+    async def api_hyperliquid(
+        address: str, fills: int = 0, _: None = Depends(auth)
+    ) -> dict:
         from chains.evm import _ADDR_RE
         if not _ADDR_RE.match(address.strip()):
             raise HTTPException(status_code=400, detail="地址格式不正确")
         try:
-            return await hl.hyperliquid_state(app.state.http, address)
+            return await hl.hyperliquid_state(
+                app.state.http, address, with_fills=bool(fills)
+            )
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
 

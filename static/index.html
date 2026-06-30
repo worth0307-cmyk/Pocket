@@ -271,7 +271,7 @@ function activeChains(){
 function toggleAuto(on){ autoOn=on; startTimer(); }
 function toggleSpam(on){ hideSpam=on; renderDetail(); }
 function toggleOnlyTrades(on){ onlyTrades=on; renderDetail(); }
-function swapStats(list){ let b=0,s=0,bu=0,se=0; (list||[]).forEach(x=>{ if(x.type==="BUY"){b+=x.value_usd;bu++} else {s+=x.value_usd;se++} }); return {buys:bu,sells:se,bought_usd:b,sold_usd:s,realized_pnl_usd:s-b,window:(list||[]).length}; }
+function swapStats(list){ let bu=0,se=0,evmB=0,evmS=0,hlPnl=0; (list||[]).forEach(x=>{ if(x.type==="BUY") bu++; else se++; if(x.closed_pnl!=null){ hlPnl+=x.closed_pnl; } else { if(x.type==="BUY") evmB+=x.value_usd; else evmS+=x.value_usd; } }); return {buys:bu,sells:se,realized_pnl_usd:hlPnl+(evmS-evmB),window:(list||[]).length}; }
 
 async function openDetail(skel){
   if(!sel) return; const cur=sel;
@@ -289,13 +289,13 @@ async function loadAll(cur){
     if(JSON.stringify(sel)!==tag) return;
     cache.updated=Date.now(); renderDetail();
     await Promise.all([
-      api(`/api/hyperliquid?address=${addr}`).then(d=>cache.hl=d).catch(e=>cache.hl=null),
+      api(`/api/hyperliquid?address=${addr}&fills=1`).then(d=>cache.hl=d).catch(e=>cache.hl=null),
       loadStreamInto(cur),
     ]);
   } else {
     cache.port=null;
     const tasks=[ api(`/api/balance?chain=${cur.chain}&address=${addr}`).then(d=>cache.bal=d).catch(e=>cache.bal={__err:e.message}) ];
-    if(isEvm){ tasks.push(api(`/api/hyperliquid?address=${addr}`).then(d=>cache.hl=d).catch(e=>cache.hl=null)); } else cache.hl=null;
+    if(isEvm){ tasks.push(api(`/api/hyperliquid?address=${addr}&fills=1`).then(d=>cache.hl=d).catch(e=>cache.hl=null)); } else cache.hl=null;
     tasks.push(loadStreamInto(cur));
     await Promise.all(tasks);
   }
@@ -316,7 +316,11 @@ async function loadStreamInto(cur){
   cache.hist=h.status==="fulfilled"?h.value:{__err:h.reason?.message};
   cache.pnl=p.status==="fulfilled"?p.value:{available:false};
 }
-async function refreshStream(){ const cur=sel; if(!cur) return; const tag=JSON.stringify(cur); await loadStreamInto(cur); if(JSON.stringify(sel)!==tag) return; cache.updated=Date.now(); renderDetail(); }
+async function refreshStream(){ const cur=sel; if(!cur) return; const tag=JSON.stringify(cur);
+  const tasks=[loadStreamInto(cur)];
+  if(cur.category==="evm"){ tasks.push(api(`/api/hyperliquid?address=${encodeURIComponent(cur.address)}&fills=1`).then(d=>cache.hl=d).catch(()=>{})); }
+  await Promise.all(tasks);
+  if(JSON.stringify(sel)!==tag) return; cache.updated=Date.now(); renderDetail(); }
 
 function renderShell(){
   return `<div class="det-head"><div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
@@ -331,7 +335,10 @@ function chainTabsHTML(){
     const active = isM ? chainFilter===id : sel.chain===id;
     return `<span class="chain-tab ${active?"active":""}" onclick="switchChain('${id}')">${id.toUpperCase()}${utxt}</span>`;
   }).join("");
-  if(isM) chips = `<span class="chain-tab ${chainFilter==null?"active":""}" onclick="setChainFilter(null)">全部</span>` + chips;
+  if(isM){
+    chips = `<span class="chain-tab ${chainFilter==null?"active":""}" onclick="setChainFilter(null)">全部</span>` + chips;
+    if(cache.hl && cache.hl.total_usd) chips += `<span class="chain-tab ${chainFilter==='HL'?"active":""}" onclick="setChainFilter('HL')">⚡HL ${usd(cache.hl.total_usd)}</span>`;
+  }
   return `<div class="chain-tabs"><span style="color:var(--muted);font-size:12px;margin-right:4px">链分布（点击筛选）</span>${chips}</div>`;
 }
 
@@ -340,9 +347,12 @@ function renderDetail(){
   const isEvmM = sel.category==="evm" && MORALIS;
   const port=cache.port, b=cache.bal, h=cache.hist;
 
-  let swaps=(isEvmM && cache.swaps && cache.swaps.swaps) ? cache.swaps.swaps : [];
-  const fswaps = chainFilter ? swaps.filter(s=>s.chain===chainFilter) : swaps;
-  const stats = isEvmM ? swapStats(fswaps)
+  const isEvm = sel.category==="evm";
+  const evmSwaps=(cache.swaps && cache.swaps.swaps) ? cache.swaps.swaps.map(s=>({...s, venue:s.chain})) : [];
+  const hlFills=(cache.hl && cache.hl.fills) ? cache.hl.fills : [];
+  const merged=[...evmSwaps, ...hlFills].sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
+  const fmerged = chainFilter ? merged.filter(x=>x.venue===chainFilter) : merged;
+  const stats = isEvm ? swapStats(fmerged)
     : (cache.pnl&&cache.pnl.available ? {buys:cache.pnl.buys,sells:cache.pnl.sells,realized_pnl_usd:cache.pnl.realized_pnl_usd,window:cache.pnl.window} : null);
 
   let walletUsd=null, nativeStr="—", tokenCount=null;
@@ -376,7 +386,7 @@ function renderDetail(){
     <div class="stat"><div class="k">买/卖（近${stats?stats.window:0}笔）</div><div class="v">${stats?`${stats.buys}/${stats.sells}`:"—"}</div></div></div>`;
 
   const last=cache.updated?`更新于 ${ago(Math.floor(cache.updated/1000))}前`:"";
-  const histToggles = (activeTab==="tx" && !isEvmM) ?
+  const histToggles = (activeTab==="tx" && !isEvm) ?
     `<label class="switch"><input type="checkbox" ${onlyTrades?"checked":""} onchange="toggleOnlyTrades(this.checked)"> 只看买卖</label>
      <label class="switch"><input type="checkbox" ${hideSpam?"checked":""} onchange="toggleSpam(this.checked)"> 隐藏垃圾</label>` : "";
   const tabs=`<div class="tabs">
@@ -387,7 +397,7 @@ function renderDetail(){
       <button class="btn-ghost refresh-btn" onclick="openDetail(false)">↻ 刷新</button></div></div>`;
 
   const body=activeTab==="tx"
-    ? (isEvmM ? renderSwaps(fswaps, cache.swaps&&cache.swaps.__err) : renderHistory(h))
+    ? (isEvm ? renderTrades(fmerged, cache.swaps&&cache.swaps.__err) : renderHistory(h))
     : (renderHL(cache.hl) + (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b)));
   document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
 }
@@ -409,18 +419,25 @@ function renderHL(hl){
   return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${ptable}${srows}</div>`;
 }
 
-function renderSwaps(list, err){
-  if(err) return `<div class="note">买卖查询失败：${esc(err)}（需 MORALIS_API_KEY）</div>`;
-  if(!list||!list.length) return `<div class="note">该钱包近期没有买卖（DEX 兑换）记录${chainFilter?`（${chainFilter.toUpperCase()}）`:""}。</div>`;
-  const rows=list.map(s=>`<tr>
-    <td><span class="badge b-${s.type}">${s.type==="BUY"?"买入":"卖出"}</span></td>
-    <td><b>${esc(s.token_symbol)}</b> <span class="chip">${s.chain}</span></td>
-    <td class="amt-cell">${fmt(s.token_amount)}</td>
-    <td>${s.price_usd!=null?"$"+(+s.price_usd).toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</td>
-    <td class="amt-cell">${usd(s.value_usd)}</td>
-    <td class="t-time">${ago(s.timestamp)}前</td>
-    <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`).join("");
-  return `<table><thead><tr><th>类型</th><th>币种</th><th>数量</th><th>价格</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+function renderTrades(list, err){
+  if(!list || !list.length){
+    if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
+    return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
+  }
+  const rows=list.map(s=>{
+    const venue = s.venue==='HL' ? '⚡HL' : (s.venue||s.chain||'').toUpperCase();
+    const dir = s.dir ? ` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(s.dir)}</span>` : '';
+    const pnl = (s.closed_pnl!=null && s.closed_pnl!==0) ? ` · <span class="${s.closed_pnl>=0?'pos':'neg'}">${(s.closed_pnl>=0?'+':'')+usd(s.closed_pnl)}</span>` : '';
+    return `<tr>
+      <td><span class="badge b-${s.type}">${s.type==="BUY"?"买入":"卖出"}</span></td>
+      <td><b>${esc(s.token_symbol)}</b> <span class="chip">${venue}</span>${dir}</td>
+      <td class="amt-cell">${fmt(s.token_amount)}</td>
+      <td>${s.price_usd!=null?"$"+(+s.price_usd).toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</td>
+      <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
+      <td class="t-time">${ago(s.timestamp)}前</td>
+      <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
+  }).join("");
+  return `<table><thead><tr><th>类型</th><th>币种/来源</th><th>数量</th><th>价格</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderPortfolioMoralis(port){

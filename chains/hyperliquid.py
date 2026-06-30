@@ -32,8 +32,40 @@ def _f(v) -> float:
         return 0.0
 
 
-async def hyperliquid_state(http: httpx.AsyncClient, address: str) -> dict:
-    """Perps account value + open positions + spot balances for an address."""
+async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 40) -> list:
+    """Recent Hyperliquid trades (fills) as normalized buy/sell actions."""
+    data = await _post(http, {"type": "userFills", "user": address})
+    out: list[dict] = []
+    if isinstance(data, list):
+        for f in data:
+            px = _f(f.get("px"))
+            sz = _f(f.get("sz"))
+            h = f.get("hash", "") or ""
+            out.append({
+                "type": "BUY" if f.get("side") == "B" else "SELL",
+                "venue": "HL",
+                "token_symbol": f.get("coin") or "?",
+                "token_amount": sz,
+                "price_usd": px if px else None,
+                "value_usd": px * sz,
+                "closed_pnl": _f(f.get("closedPnl")),
+                "dir": f.get("dir") or "",
+                "timestamp": int(_f(f.get("time")) / 1000) if f.get("time") else 0,
+                "tx_hash": h,
+                "explorer_url": f"https://app.hyperliquid.xyz/explorer/tx/{h}" if h else "",
+            })
+    out.sort(key=lambda x: x["timestamp"], reverse=True)
+    return out[:limit]
+
+
+async def hyperliquid_state(
+    http: httpx.AsyncClient, address: str, with_fills: bool = False
+) -> dict:
+    """Perps account value + open positions + spot balances for an address.
+
+    When ``with_fills`` is set, also include recent trades (buy/sell fills) so
+    the action stream can show Hyperliquid activity, not just EVM DEX swaps.
+    """
     address = address.strip().lower()
 
     perps = await _post(http, {"type": "clearinghouseState", "user": address})
@@ -82,10 +114,19 @@ async def hyperliquid_state(http: httpx.AsyncClient, address: str) -> dict:
 
     positions.sort(key=lambda x: abs(x["value_usd"]), reverse=True)
     spot.sort(key=lambda x: x["usd"], reverse=True)
+
+    fills: list = []
+    if with_fills:
+        try:
+            fills = await _user_fills(http, address)
+        except ChainError:
+            pass
+
     return {
         "account_value": account_value,
         "positions": positions,
         "spot": spot,
         "spot_usd": spot_usd,
         "total_usd": account_value + spot_usd,
+        "fills": fills,
     }
