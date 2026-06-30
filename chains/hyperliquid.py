@@ -9,11 +9,18 @@ Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api
 
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from .base import ChainError
 
 HL_API = "https://api.hyperliquid.xyz/info"
+
+# Market-wide mid prices are identical for every wallet, so cache them briefly
+# to avoid an extra POST on every state lookup (HL is keyless but IP-rate-limited).
+_mids_cache: dict = {"data": None, "ts": 0.0}
+_MIDS_TTL = 30
 
 
 async def _post(http: httpx.AsyncClient, body: dict) -> object:
@@ -32,7 +39,19 @@ def _f(v) -> float:
         return 0.0
 
 
-async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 40) -> list:
+async def _all_mids(http: httpx.AsyncClient) -> dict:
+    now = time.time()
+    if _mids_cache["data"] is not None and now - _mids_cache["ts"] < _MIDS_TTL:
+        return _mids_cache["data"]
+    mids = await _post(http, {"type": "allMids"})
+    if isinstance(mids, dict):
+        _mids_cache["data"] = mids
+        _mids_cache["ts"] = now
+        return mids
+    return {}
+
+
+async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 200) -> list:
     """Recent Hyperliquid trades (fills) as normalized buy/sell actions."""
     data = await _post(http, {"type": "userFills", "user": address})
     out: list[dict] = []
@@ -95,8 +114,7 @@ async def hyperliquid_state(
     spot_usd = 0.0
     try:
         sp = await _post(http, {"type": "spotClearinghouseState", "user": address})
-        mids = await _post(http, {"type": "allMids"})
-        mids = mids if isinstance(mids, dict) else {}
+        mids = await _all_mids(http)
         for b in (sp or {}).get("balances", []) or []:
             coin = b.get("coin")
             total = _f(b.get("total"))

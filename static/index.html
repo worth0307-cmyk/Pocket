@@ -122,6 +122,9 @@
   .hl-block { border-bottom: 8px solid var(--bg); }
   .hl-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 18px; font-weight: 800; background: #eefaf6; border-bottom: 1px solid var(--border); }
   .hl-head .hl-val { color: var(--muted); font-weight: 700; font-size: 13px; }
+  .scroll-area { max-height: 520px; overflow-y: auto; }
+  .scroll-sm { max-height: 340px; overflow-y: auto; }
+  .scroll-area th, .scroll-sm th { position: sticky; top: 0; background: #fff; z-index: 1; }
   .note { color: var(--muted); font-size: 12.5px; padding: 16px 18px; }
   .spinner { color: var(--muted); padding: 26px; text-align: center; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
@@ -170,6 +173,7 @@ let sel = null;           // {chain,address,label,category}
 let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
 let timer = null, autoOn = true;
 let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
+let cardCache = {};  // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -238,20 +242,33 @@ async function loadWallets(){
       <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s" id="wpnl-${w.id}">总值</div></div>
       <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
   }).join("");
-  d.wallets.forEach(async w=>{
-    const el=document.getElementById("wbal-"+w.id); if(!el) return;
-    const pel=document.getElementById("wpnl-"+w.id);
-    try{
-      if(EVM_CHAINS.includes(w.chain)){
-        let total=0, have=false, upnl=0;
-        if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
-        try{ const hh=await api(`/api/hyperliquid?address=${w.address}`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; } upnl=hh.unrealized_pnl||0; } }catch(e){}
-        if(have) el.textContent=usd(total);
-        else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=fmt(b.native_amount)+" "+b.native_symbol; }
-        if(pel) pel.innerHTML = upnl ? `<span class="${upnl>=0?'pos':'neg'}">浮 ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
-      } else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); el.textContent=b.extra&&b.extra.total_usd!=null?usd(b.extra.total_usd):fmt(b.native_amount)+" "+b.native_symbol; }
-    }catch(e){ el.textContent="—"; }
-  });
+  // 串行填充各卡片总值/浮盈，避免一次性并发把免费接口打到限流
+  (async()=>{ for(const w of d.wallets){ await fillCard(w); } })();
+}
+
+async function fillCard(w){
+  const el=document.getElementById("wbal-"+w.id); if(!el) return;
+  const pel=document.getElementById("wpnl-"+w.id);
+  const key=w.chain+":"+w.address;
+  const c=cardCache[key];
+  if(c && Date.now()-c.ts<60000){ el.textContent=c.text; if(pel) pel.innerHTML=c.pnl; return; }
+  try{
+    if(EVM_CHAINS.includes(w.chain)){
+      let total=0, have=false, upnl=0;
+      if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
+      try{ const hh=await api(`/api/hyperliquid?address=${w.address}`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; } upnl=hh.unrealized_pnl||0; } }catch(e){}
+      let text;
+      if(have){ text=usd(total); el.textContent=text; }
+      else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); text=fmt(b.native_amount)+" "+b.native_symbol; el.textContent=text; }
+      const pnl = upnl ? `<span class="${upnl>=0?'pos':'neg'}">浮 ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
+      if(pel) pel.innerHTML=pnl;
+      cardCache[key]={text, pnl, ts:Date.now()};
+    } else {
+      const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`);
+      const text=b.extra&&b.extra.total_usd!=null?usd(b.extra.total_usd):fmt(b.native_amount)+" "+b.native_symbol;
+      el.textContent=text; cardCache[key]={text, pnl:"总值", ts:Date.now()};
+    }
+  }catch(e){ el.textContent="—"; }
 }
 function queryAddress(add){
   const address=document.getElementById("address").value.trim();
@@ -390,14 +407,14 @@ function renderDetail(){
 
   const chainTabs = sel.category==="evm" ? chainTabsHTML() : "";
 
-  const stat2 = isEvmM
-    ? `<div class="stat"><div class="k">代币种类</div><div class="v">${tokenCount!=null?tokenCount:"—"}</div></div>`
-    : `<div class="stat"><div class="k">原生币</div><div class="v">${b&&!b.__err?fmt(b.native_amount):"—"} <small>${b&&!b.__err?esc(b.native_symbol):""}</small></div></div>`;
+  const unrealized = (cache.hl && typeof cache.hl.unrealized_pnl==='number') ? cache.hl.unrealized_pnl : null;
+  const uCls = unrealized==null?"":(unrealized>=0?"pos":"neg");
   const pnlScope = isEvmM ? (chainFilter?chainFilter.toUpperCase():"全链") : sel.chain.toUpperCase();
   const stats_html=`<div class="stats">
     <div class="stat"><div class="k">总资产${hlUsd>0?"（含HL）":""}</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
-    ${stat2}
-    <div class="stat"><div class="k">已实现盈亏 <span class="help" title="按成交时 USD：卖出回款 − 买入成本（近期可见买卖），仅供参考。">?</span></div>
+    <div class="stat"><div class="k">浮动盈亏 <span class="help" title="未平仓持仓按当前价的浮盈/浮亏（Hyperliquid）。EVM 现货持仓暂不计入。">?</span></div>
+      <div class="v ${uCls}">${(unrealized!=null&&hlUsd>0)?(unrealized>=0?"+":"")+usd(unrealized):"—"}</div></div>
+    <div class="stat"><div class="k">已实现盈亏 <span class="help" title="卖出/平仓锁定的盈亏：HL 平仓 closedPnl + EVM 卖出回款−买入成本（近期可见）。">?</span></div>
       <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"} <small>${pnlScope}</small></div></div>
     <div class="stat"><div class="k">买/卖（近${stats?stats.window:0}笔）</div><div class="v">${stats?`${stats.buys}/${stats.sells}`:"—"}</div></div></div>`;
 
@@ -436,30 +453,38 @@ function renderHL(hl){
 }
 
 function renderTradeSummary(list){
-  if(!list || !list.length) return "";
   const m={};
-  list.forEach(t=>{
+  (list||[]).forEach(t=>{
     const k=t.token_symbol||'?';
-    const g=m[k]||(m[k]={coin:k,buys:0,sells:0,netAmt:0,buyVal:0,sellVal:0,realized:0});
-    if(t.type==="BUY"){ g.buys++; g.netAmt+=t.token_amount; g.buyVal+=t.value_usd; }
-    else { g.sells++; g.netAmt-=t.token_amount; g.sellVal+=t.value_usd; }
+    const g=m[k]||(m[k]={coin:k,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0});
+    if(t.type==="BUY"){ g.buys++; g.buyAmt+=t.token_amount; g.buyVal+=t.value_usd; }
+    else { g.sells++; g.sellAmt+=t.token_amount; g.sellVal+=t.value_usd; }
     if(t.closed_pnl!=null) g.realized+=t.closed_pnl;
   });
   const pos={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>pos[p.coin]=p);
-  const coins=Object.values(m).sort((a,b)=>(b.buyVal+b.sellVal)-(a.buyVal+a.sellVal)).slice(0,8);
+  // 有持仓但本窗口无成交的币也纳入，保证当前持仓一定显示
+  Object.keys(pos).forEach(c=>{ if(!m[c]) m[c]={coin:c,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0}; });
+  const wt=g=>{ const p=pos[g.coin]; return (p?Math.abs(p.value_usd):0)+g.buyVal+g.sellVal; };
+  const coins=Object.values(m).sort((a,b)=>wt(b)-wt(a)).slice(0,20);
   if(!coins.length) return "";
   const rows=coins.map(g=>{
     const p=pos[g.coin];
-    const posTxt = p ? `${p.side} ${fmt(Math.abs(p.size))} <span class="${p.unrealized_pnl>=0?'pos':'neg'}">(${(p.unrealized_pnl>=0?'+':'')+usd(p.unrealized_pnl)})</span>` : '—';
+    const net=g.buyAmt-g.sellAmt;
+    const avg = p ? p.entry_px : (g.buyAmt>0 ? g.buyVal/g.buyAmt : null);
+    const posVal = p ? p.value_usd : null;
+    const side = p ? `<span class="${p.side==='多'?'pos':'neg'}">${p.side}</span> ` : '';
+    const upnl = p ? p.unrealized_pnl : null;
     return `<tr>
       <td><b>${esc(g.coin)}</b></td>
       <td>${g.buys}/${g.sells}</td>
-      <td class="${g.netAmt>=0?'pos':'neg'}">${(g.netAmt>=0?'+':'')+fmt(g.netAmt)}</td>
-      <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td>
-      <td>${posTxt}</td></tr>`;
+      <td class="${net>=0?'pos':'neg'}">${(net>=0?'+':'')+fmt(net)}</td>
+      <td>${avg!=null?'$'+(+avg).toLocaleString(undefined,{maximumFractionDigits:6}):'—'}</td>
+      <td>${posVal!=null?side+usd(posVal):'—'}</td>
+      <td>${upnl!=null?`<span class="${upnl>=0?'pos':'neg'}">${(upnl>=0?'+':'')+usd(upnl)}</span>`:'—'}</td>
+      <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td></tr>`;
   }).join("");
-  return `<div class="summary-block"><div class="summary-head">币种汇总（近 ${list.length} 笔买卖）</div>
-    <table><thead><tr><th>币种</th><th>买/卖笔数</th><th>净数量</th><th>已实现盈亏</th><th>当前持仓(HL)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="summary-block"><div class="summary-head">币种汇总</div>
+    <div class="scroll-sm"><table><thead><tr><th>币种</th><th>买/卖</th><th>净数量</th><th>持仓均价</th><th>持仓金额</th><th>浮动盈亏</th><th>已实现盈亏</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function tradeBadge(s){
   const d=s.dir||"";
@@ -489,7 +514,7 @@ function renderTrades(list, err){
       <td class="t-time">${ago(s.timestamp)}前</td>
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
-  return `<table><thead><tr><th>类型</th><th>币种/来源</th><th>数量</th><th>价格</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<div class="scroll-area"><table><thead><tr><th>类型</th><th>币种/来源</th><th>数量</th><th>价格</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderPortfolioMoralis(port){
