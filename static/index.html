@@ -122,6 +122,9 @@
   .hl-block { border-bottom: 8px solid var(--bg); }
   .hl-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 18px; font-weight: 800; background: #eefaf6; border-bottom: 1px solid var(--border); }
   .hl-head .hl-val { color: var(--muted); font-weight: 700; font-size: 13px; }
+  .th-filter { font: inherit; font-size: 11px; padding: 1px 3px; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--muted); cursor: pointer; margin-left: 3px; max-width: 88px; vertical-align: middle; }
+  .th-sort { cursor: pointer; color: var(--muted-2); margin-left: 4px; user-select: none; font-size: 12px; }
+  .th-sort:hover, .th-sort.on { color: var(--accent); }
   .scroll-area { max-height: 520px; overflow-y: auto; }
   .scroll-sm { max-height: 340px; overflow-y: auto; }
   .scroll-area th, .scroll-sm th { position: sticky; top: 0; background: #fff; z-index: 1; }
@@ -171,6 +174,7 @@ const TOKEN = localStorage.getItem("wt_token") || "";
 let CHAINS = [], MORALIS = false;
 let sel = null;           // {chain,address,label,category}
 let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
+let typeFilter = "", coinFilter = "", sortKey = "", sortDir = "desc";  // 动作流列筛选/排序
 let timer = null, autoOn = true;
 let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
 let cardCache = {};  // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
@@ -194,8 +198,10 @@ function copyText(t, ev){ if(ev) ev.stopPropagation();
 function fallbackCopy(t,done){ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");done();}catch(e){} document.body.removeChild(ta); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
 function shortAddr(a,h=6,t=4){ return a.length<=h+t+1?a:a.slice(0,h)+"…"+a.slice(-t); }
-function fmt(x){ if(!x) return "0"; const a=Math.abs(x); if(a>=1e9) return (x/1e9).toFixed(2)+"B"; if(a>=1e6) return (x/1e6).toFixed(2)+"M"; if(a>=1) return (+x.toFixed(4)).toLocaleString(); if(a>=1e-4) return (+x.toFixed(6)).toString(); return x.toExponential(2); }
-function usd(x){ if(x==null) return "—"; const s=x<0?"-":""; const a=Math.abs(x); if(a>=1e9) return s+"$"+(a/1e9).toFixed(2)+"B"; if(a>=1e6) return s+"$"+(a/1e6).toFixed(2)+"M"; if(a>=1e3) return s+"$"+a.toLocaleString(undefined,{maximumFractionDigits:0}); return s+"$"+a.toLocaleString(undefined,{maximumFractionDigits:2}); }
+const _D2={minimumFractionDigits:2,maximumFractionDigits:2};
+function fmt(x){ x=+x||0; const a=Math.abs(x); if(a>=1e9) return (x/1e9).toFixed(2)+"B"; if(a>=1e6) return (x/1e6).toFixed(2)+"M"; return x.toLocaleString(undefined,_D2); }
+function usd(x){ if(x==null) return "—"; const s=x<0?"-":""; const a=Math.abs(x); if(a>=1e9) return s+"$"+(a/1e9).toFixed(2)+"B"; if(a>=1e6) return s+"$"+(a/1e6).toFixed(2)+"M"; return s+"$"+a.toLocaleString(undefined,_D2); }
+function price(x){ if(x==null) return "—"; const a=Math.abs(x); if(a>=1) return "$"+x.toLocaleString(undefined,_D2); if(a===0) return "$0.00"; return "$"+(+x.toPrecision(2)); }
 function ago(ts){ if(!ts) return ""; const s=Math.floor(Date.now()/1000-ts); if(s<60)return s+"s"; if(s<3600)return Math.floor(s/60)+"m"; if(s<86400)return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
 function fmtDate(ts){ if(!ts) return ""; const d=new Date(ts*1000); const p=n=>String(n).padStart(2,'0');
   const mo=p(d.getMonth()+1),da=p(d.getDate()),h=p(d.getHours()),mi=p(d.getMinutes());
@@ -280,7 +286,7 @@ function queryAddress(add){
   const cat=detectCategory(address); if(!cat) return toast("无法识别该地址格式");
   const chain = cat==="evm" ? firstUsableEvm() : cat;
   if(!chainUsable(chain)) return toast(cat==="evm"?"请先在 .env 配置 ETHERSCAN_API_KEY":"该链未配置 API Key");
-  sel={chain,address,label:"",category:cat}; activeTab="tx"; chainFilter=null;
+  sel={chain,address,label:"",category:cat}; activeTab="tx"; chainFilter=null; resetTradeFilters();
   if(add) doAdd(chain,address); else { loadWallets(); openDetail(true); }
 }
 async function doAdd(chain,address){
@@ -289,11 +295,15 @@ async function doAdd(chain,address){
   }catch(e){ toast(e.message); }
 }
 async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
-function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; loadWallets(); openDetail(true); }
+function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; resetTradeFilters(); loadWallets(); openDetail(true); }
 function switchChain(id){ if(!sel) return;
   if(sel.category==="evm"&&MORALIS){ chainFilter=(chainFilter===id?null:id); renderDetail(); }
   else { sel.chain=id; openDetail(true); } }
 function setChainFilter(v){ chainFilter=v; renderDetail(); }
+function setTypeFilter(v){ typeFilter=v; renderDetail(); }
+function setCoinFilter(v){ coinFilter=v; renderDetail(); }
+function setSort(k){ if(sortKey===k){ sortDir = sortDir==="desc"?"asc":"desc"; } else { sortKey=k; sortDir="desc"; } renderDetail(); }
+function resetTradeFilters(){ typeFilter=""; coinFilter=""; sortKey=""; sortDir="desc"; }
 
 function stopTimer(){ if(timer){clearInterval(timer);timer=null;} }
 function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(refreshStream,60000); }
@@ -482,7 +492,7 @@ function renderTradeSummary(list){
       <td><b>${esc(g.coin)}</b></td>
       <td>${g.buys}/${g.sells}</td>
       <td class="${net>=0?'pos':'neg'}">${(net>=0?'+':'')+fmt(net)}</td>
-      <td>${avg!=null?'$'+(+avg).toLocaleString(undefined,{maximumFractionDigits:6}):'—'}</td>
+      <td>${price(avg)}</td>
       <td>${posVal!=null?side+usd(posVal):'—'}</td>
       <td>${upnl!=null?`<span class="${upnl>=0?'pos':'neg'}">${(upnl>=0?'+':'')+usd(upnl)}</span>`:'—'}</td>
       <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td></tr>`;
@@ -503,7 +513,18 @@ function renderTrades(list, err){
     if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
     return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
   }
-  const rows=list.map(s=>{
+  const types=[...new Set(list.map(s=>tradeBadge(s).t))];
+  const coins=[...new Set(list.map(s=>s.token_symbol||'?'))];
+  let shown=list.slice();
+  if(typeFilter) shown=shown.filter(s=>tradeBadge(s).t===typeFilter);
+  if(coinFilter) shown=shown.filter(s=>(s.token_symbol||'?')===coinFilter);
+  if(sortKey){ const k={amount:'token_amount',price:'price_usd',value:'value_usd',time:'timestamp'}[sortKey];
+    shown.sort((a,b)=>{ const av=+a[k]||0, bv=+b[k]||0; return sortDir==='desc'?bv-av:av-bv; }); }
+
+  const selBox=(cur,onCh,items)=>`<select class="th-filter" onchange="${onCh}(this.value)"><option value="">全部</option>${items.map(t=>`<option value="${esc(t)}" ${cur===t?'selected':''}>${esc(t)}</option>`).join("")}</select>`;
+  const sortBtn=(k)=>`<span class="th-sort ${sortKey===k?'on':''}" onclick="setSort('${k}')">${sortKey===k?(sortDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+
+  const rows=shown.map(s=>{
     const bd=tradeBadge(s);
     const venueChip = s.venue==='HL'
       ? `<span class="chip" title="Hyperliquid 永续/现货成交">⚡HL</span>`
@@ -513,12 +534,20 @@ function renderTrades(list, err){
       <td><span class="badge ${bd.c}">${bd.t}</span></td>
       <td><b>${esc(s.token_symbol)}</b> ${venueChip}</td>
       <td class="amt-cell">${fmt(s.token_amount)}</td>
-      <td>${s.price_usd!=null?"$"+(+s.price_usd).toLocaleString(undefined,{maximumFractionDigits:8}):"—"}</td>
+      <td>${price(s.price_usd)}</td>
       <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
       <td class="t-time" title="${ago(s.timestamp)}前">${fmtDate(s.timestamp)}</td>
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
-  return `<div class="scroll-area"><table><thead><tr><th>类型</th><th>币种/来源</th><th>数量</th><th>价格</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const tbody = rows || `<tr><td colspan="7" class="note">无符合筛选的记录</td></tr>`;
+  return `<div class="scroll-area"><table><thead><tr>
+    <th>类型 ${selBox(typeFilter,'setTypeFilter',types)}</th>
+    <th>币种/来源 ${selBox(coinFilter,'setCoinFilter',coins)}</th>
+    <th>数量 ${sortBtn('amount')}</th>
+    <th>价格 ${sortBtn('price')}</th>
+    <th>金额(USD) ${sortBtn('value')}</th>
+    <th>时间 ${sortBtn('time')}</th>
+    <th></th></tr></thead><tbody>${tbody}</tbody></table></div>`;
 }
 
 function renderPortfolioMoralis(port){
@@ -527,7 +556,7 @@ function renderPortfolioMoralis(port){
   const rows=port.tokens.slice(0,80).map(t=>`<div class="pf-row">
     <div class="coin" style="${avatarStyle(t.symbol+(t.contract||''))}">${esc((t.symbol||'?').slice(0,3))}</div>
     <div class="sym">${esc(t.symbol||'?')} <span class="chip">${t.chain}</span>
-      <div class="sub2">${fmt(t.amount)}${t.price?` · $${(+t.price).toLocaleString(undefined,{maximumFractionDigits:6})}`:""}</div></div>
+      <div class="sub2">${fmt(t.amount)}${t.price?` · ${price(t.price)}`:""}</div></div>
     <div class="amt"><div class="v">${usd(t.usd_value)}</div></div></div>`).join("");
   const more = port.tokens.length>80 ? `<div class="note">仅显示前 80 个，共 ${port.tokens.length} 个。</div>` : "";
   return rows + more;
