@@ -138,6 +138,8 @@
   .modal-body { overflow-y: auto; }
   .modal-body th { position: sticky; top: 0; background: #fff; z-index: 1; }
   .modal-foot { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-top: 1px solid var(--border); }
+  .lb-h { cursor: pointer; user-select: none; white-space: nowrap; }
+  .lb-h:hover, .lb-h.on { color: var(--accent); }
   .lb-close { cursor: pointer; color: var(--muted); font-size: 18px; padding: 0 4px; }
   .lb-close:hover { color: var(--red); }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
@@ -178,11 +180,8 @@
   <div id="lbModal" class="modal-bg" onclick="if(event.target===this)closeLeaderboard()">
     <div class="modal">
       <div class="modal-head">🏆 Hyperliquid 排行榜
+        <span style="font-weight:400;color:var(--muted);font-size:12px;margin-left:8px">点列头排序（HL 仅提供 日/周/月/总）</span>
         <div class="ctrls">
-          <select id="lbWindow" class="th-filter" style="max-width:none;font-size:13px" onchange="loadLeaderboard()">
-            <option value="day">日榜</option><option value="week">周榜</option><option value="month">月榜</option>
-            <option value="allTime">总榜</option><option value="value">账户价值</option>
-          </select>
           <select id="lbLimit" class="th-filter" style="max-width:none;font-size:13px" onchange="loadLeaderboard()">
             <option value="25">前 25</option><option value="50" selected>前 50</option><option value="100">前 100</option>
           </select>
@@ -215,7 +214,7 @@ let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, upd
 let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
 let detailCache = {}; // 详情数据快照，切换回最近看过的钱包时秒开
 function detailKey(s){ return s ? s.chain+":"+s.address+":"+s.category : ""; }
-let trackedAddrs = new Set(), lbRows = [], lbSel = new Set();
+let trackedAddrs = new Set(), lbRows = [], lbSel = new Set(), lbSort = "week", lbDir = "desc";
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -650,16 +649,22 @@ function switchTab(t){ activeTab=t; renderDetail(); }
 // ---- Hyperliquid 排行榜 ----
 function openLeaderboard(){ document.getElementById("lbModal").classList.add("show"); if(!lbRows.length) loadLeaderboard(); }
 function closeLeaderboard(){ document.getElementById("lbModal").classList.remove("show"); }
+const LB_COLS=[["value","账户价值"],["day","日盈亏"],["week","周盈亏"],["month","月盈亏"],["allTime","总盈亏"]];
+function lbSetSort(k){ if(lbSort===k){ lbDir = lbDir==="desc"?"asc":"desc"; } else { lbSort=k; lbDir="desc"; } loadLeaderboard(); }
 async function loadLeaderboard(){
-  const w=document.getElementById("lbWindow").value, lim=document.getElementById("lbLimit").value;
+  const lim=document.getElementById("lbLimit").value;
   const body=document.getElementById("lbBody"); body.innerHTML='<div class="spinner">加载排行榜…</div>';
   lbSel.clear(); document.getElementById("lbAll").checked=false; updateLbCount();
-  try{ const d=await api(`/api/hl_leaderboard?window=${w}&limit=${lim}`); lbRows=d.rows||[]; renderLeaderboard(w); }
+  try{ const d=await api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=${lim}`); lbRows=d.rows||[]; renderLeaderboard(); }
   catch(e){ body.innerHTML=`<div class="note">加载失败：${esc(e.message)}（需能访问 Hyperliquid）</div>`; }
 }
-function renderLeaderboard(w){
-  const wl={day:"日盈亏",week:"周盈亏",month:"月盈亏",allTime:"总盈亏",value:"账户价值"}[w]||"盈亏";
-  if(!lbRows.length){ document.getElementById("lbBody").innerHTML='<div class="note">暂无数据</div>'; return; }
+function lbPnlCell(w){ if(!w) return '<td>—</td>'; return `<td class="amt-cell ${w.pnl>=0?'pos':'neg'}" title="ROI ${(w.roi*100).toFixed(2)}%">${(w.pnl>=0?'+':'')+usd(w.pnl)}</td>`; }
+function renderLeaderboard(){
+  if(!lbRows.length){ document.getElementById("lbBody").innerHTML='<div class="note">暂无数据（需能访问 Hyperliquid）</div>'; return; }
+  const head=LB_COLS.map(([k,label])=>{
+    const arrow = lbSort===k ? (lbDir==="desc"?"↓":"↑") : "⇅";
+    return `<th class="lb-h ${lbSort===k?'on':''}" onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span></th>`;
+  }).join("");
   const rows=lbRows.map((r,i)=>{
     const tracked=trackedAddrs.has((r.address||'').toLowerCase());
     const nm=r.display_name||shortAddr(r.address||'',8,6);
@@ -668,14 +673,13 @@ function renderLeaderboard(w){
       <td><input type="checkbox" ${tracked?'disabled':''} ${lbSel.has(r.address)?'checked':''} onchange="lbToggle('${r.address}',this.checked)"></td>
       <td><b>${esc(nm)}</b><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?' · 已跟踪':''}</div></td>
       <td class="amt-cell">${usd(r.account_value)}</td>
-      <td class="amt-cell ${r.pnl>=0?'pos':'neg'}">${(r.pnl>=0?'+':'')+usd(r.pnl)}</td>
-      <td class="${r.roi>=0?'pos':'neg'}">${(r.roi*100).toFixed(2)}%</td></tr>`;
+      ${lbPnlCell(r.day)}${lbPnlCell(r.week)}${lbPnlCell(r.month)}${lbPnlCell(r.allTime)}</tr>`;
   }).join("");
-  document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th><th>交易者</th><th>账户价值</th><th>${wl}</th><th>ROI</th></tr></thead><tbody>${rows}</tbody></table>`;
+  document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th><th>交易者</th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   updateLbCount();
 }
 function lbToggle(addr,on){ if(on) lbSel.add(addr); else lbSel.delete(addr); updateLbCount(); }
-function lbToggleAll(on){ lbSel.clear(); if(on) lbRows.forEach(r=>{ if(!trackedAddrs.has((r.address||'').toLowerCase())) lbSel.add(r.address); }); renderLeaderboard(document.getElementById("lbWindow").value); }
+function lbToggleAll(on){ lbSel.clear(); if(on) lbRows.forEach(r=>{ if(!trackedAddrs.has((r.address||'').toLowerCase())) lbSel.add(r.address); }); renderLeaderboard(); }
 function updateLbCount(){ document.getElementById("lbCount").textContent = lbSel.size?`已选 ${lbSel.size} 个`:""; }
 async function importSelected(){
   if(!lbSel.size) return toast("请先勾选地址");

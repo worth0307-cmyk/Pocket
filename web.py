@@ -254,15 +254,18 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
 
     @app.get("/api/hl_leaderboard")
     async def api_hl_leaderboard(
-        window: str = "day",
+        sort: str = "week",
+        dir: str = "desc",
         limit: int = Query(50, ge=1, le=200),
         _: None = Depends(auth),
     ) -> dict:
         try:
-            rows = await hl.leaderboard(app.state.http, window=window, limit=limit)
+            rows = await hl.leaderboard(
+                app.state.http, sort=sort, direction=dir, limit=limit
+            )
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
-        return {"rows": rows, "window": window}
+        return {"rows": rows, "sort": sort, "dir": dir}
 
     @app.post("/api/wallets/batch")
     async def api_batch(body: BatchAdd, _: None = Depends(auth)) -> dict:

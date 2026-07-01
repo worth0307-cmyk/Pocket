@@ -73,32 +73,42 @@ async def _leaderboard_rows(http: httpx.AsyncClient) -> list:
     return rows
 
 
-async def leaderboard(
-    http: httpx.AsyncClient, window: str = "day", limit: int = 50
-) -> list[dict]:
-    """Top traders from the Hyperliquid leaderboard.
+# Windows the Hyperliquid leaderboard actually exposes (no biweekly / quarter).
+LB_WINDOWS = ("day", "week", "month", "allTime")
 
-    ``window`` is one of day/week/month/allTime (ranked by that window's PnL),
-    or "value" (ranked by current account value).
+
+async def leaderboard(
+    http: httpx.AsyncClient,
+    sort: str = "week",
+    direction: str = "desc",
+    limit: int = 50,
+) -> list[dict]:
+    """Top traders from the Hyperliquid leaderboard, with every window's PnL/ROI.
+
+    ``sort`` is "value" (account value) or one of day/week/month/allTime (that
+    window's PnL). ``direction`` is "desc" (default) or "asc".
     """
     rows = await _leaderboard_rows(http)
-    perf_key = window if window in ("day", "week", "month", "allTime") else "allTime"
     out = []
     for r in rows:
         perf = dict(r.get("windowPerformances") or [])
-        w = perf.get(perf_key, {}) or {}
-        out.append({
+        row = {
             "address": r.get("ethAddress"),
             "display_name": r.get("displayName") or "",
             "account_value": _f(r.get("accountValue")),
-            "pnl": _f(w.get("pnl")),
-            "roi": _f(w.get("roi")),
-            "vlm": _f(w.get("vlm")),
-        })
-    if window == "value":
-        out.sort(key=lambda x: x["account_value"], reverse=True)
+        }
+        for k in LB_WINDOWS:
+            w = perf.get(k) or {}
+            row[k] = {"pnl": _f(w.get("pnl")), "roi": _f(w.get("roi"))}
+        out.append(row)
+
+    if sort == "value":
+        keyf = lambda x: x["account_value"]
+    elif sort in LB_WINDOWS:
+        keyf = lambda x: x[sort]["pnl"]
     else:
-        out.sort(key=lambda x: x["pnl"], reverse=True)
+        keyf = lambda x: x["week"]["pnl"]
+    out.sort(key=keyf, reverse=(direction != "asc"))
     return out[: max(1, min(limit, 200))]
 
 
