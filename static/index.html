@@ -504,7 +504,7 @@ function renderDetail(){
       <button class="btn-ghost refresh-btn" onclick="openDetail(false)">↻ 刷新</button></div></div>`;
 
   const body=activeTab==="tx"
-    ? (isEvm ? (renderTradeSummary(rollup) + renderTrades(fmerged, cache.swaps&&cache.swaps.__err)) : renderHistory(h))
+    ? (isEvm ? (renderTradeSummary(rollup) + renderTrades(fmerged, cache.swaps&&cache.swaps.__err, totalUsd)) : renderHistory(h))
     : (renderHL(cache.hl) + (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b)));
   document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
   syncListHeight();
@@ -584,7 +584,7 @@ function tradeBadge(s){
   if(/close\s*short/i.test(d)) return {t:"平空",c:"b-close-short"};
   return s.type==="BUY" ? {t:"买入",c:"b-BUY"} : {t:"卖出",c:"b-SELL"};
 }
-function renderTrades(list, err){
+function renderTrades(list, err, total){
   if(!list || !list.length){
     if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
     return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
@@ -612,16 +612,18 @@ function renderTrades(list, err){
       <td class="amt-cell">${fmt(s.token_amount)}</td>
       <td>${price(s.price_usd)}</td>
       <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
+      <td style="color:var(--muted)">${(total>0 && s.value_usd!=null)?(s.value_usd/total*100).toFixed(2)+'%':'—'}</td>
       <td class="t-time" title="${ago(s.timestamp)}前">${fmtDate(s.timestamp)}</td>
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
-  const tbody = rows || `<tr><td colspan="7" class="note">无符合筛选的记录</td></tr>`;
+  const tbody = rows || `<tr><td colspan="8" class="note">无符合筛选的记录</td></tr>`;
   return `<div class="scroll-area"><table><thead><tr>
     <th>类型 ${selBox(typeFilter,'setTypeFilter',types)}</th>
     <th>币种/来源 ${selBox(coinFilter,'setCoinFilter',coins)}</th>
     <th>数量 ${sortBtn('amount')}</th>
     <th>价格 ${sortBtn('price')}</th>
     <th>金额(USD) ${sortBtn('value')}</th>
+    <th title="这笔金额 ÷ 该钱包总资产">占资产</th>
     <th>时间 ${sortBtn('time')}</th>
     <th></th></tr></thead><tbody>${tbody}</tbody></table></div>`;
 }
