@@ -284,11 +284,12 @@ async function loadWallets(){
   list.innerHTML=d.wallets.map(w=>{
     const active=sel&&sel.chain===w.chain&&sel.address===w.address;
     const initial=(w.label||w.address).slice(0,1).toUpperCase();
+    const cc=cardCache[w.chain+":"+w.address];  // 用缓存值初始化，避免重建时闪 —/重读错觉
     return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
         <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
-      <div class="bal"><div class="v" id="wbal-${w.id}">—</div><div class="s" id="wpnl-${w.id}">总值</div></div>
+      <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
       <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
   }).join("");
   // 串行填充各卡片总值/浮盈，避免一次性并发把免费接口打到限流
@@ -331,7 +332,8 @@ function queryAddress(add){
 }
 async function doAdd(chain,address){
   try{ const r=await api("/api/wallets",{method:"POST",body:JSON.stringify({chain,address,label:""})});
-    toast(r.created?"已添加跟踪":"已在清单中"); sel.label=r.wallet.label||""; await loadWallets(); openDetail(true);
+    if(r.created){ toast("✅ 已添加跟踪"); document.getElementById("address").value=""; onAddrInput(); await loadWallets(); selectWallet(r.wallet); }
+    else { toast(`⚠️ 该地址已在跟踪清单中（#${r.wallet.id}），已为你定位`); selectWallet(r.wallet); }
   }catch(e){ toast(e.message); }
 }
 async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
