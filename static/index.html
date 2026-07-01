@@ -264,13 +264,14 @@ async function fillCard(w){
   if(c && Date.now()-c.ts<60000){ el.textContent=c.text; if(pel) pel.innerHTML=c.pnl; return; }
   try{
     if(EVM_CHAINS.includes(w.chain)){
-      let total=0, have=false, upnl=0;
+      let total=0, have=false, upnl=0, pnlType='';
       if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
-      try{ const hh=await api(`/api/hyperliquid?address=${w.address}&fills=1`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; } upnl=hh.unrealized_pnl||0; } }catch(e){}
+      try{ const hh=await api(`/api/hyperliquid?address=${w.address}&fills=1`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; }
+        if(hh.unrealized_pnl){ upnl=hh.unrealized_pnl; pnlType='浮'; } else if(hh.realized_pnl){ upnl=hh.realized_pnl; pnlType='实'; } } }catch(e){}
       let text;
       if(have){ text=usd(total); el.textContent=text; }
       else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); text=fmt(b.native_amount)+" "+b.native_symbol; el.textContent=text; }
-      const pnl = upnl ? `<span class="${upnl>=0?'pos':'neg'}">浮 ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
+      const pnl = upnl ? `<span class="${upnl>=0?'pos':'neg'}">${pnlType} ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
       if(pel) pel.innerHTML=pnl;
       cardCache[key]={text, pnl, ts:Date.now()};
     } else {
@@ -399,6 +400,7 @@ function renderDetail(){
   const hlFills=(cache.hl && cache.hl.fills) ? cache.hl.fills : [];
   const merged=[...evmSwaps, ...hlFills].sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
   const fmerged = chainFilter ? merged.filter(x=>x.venue===chainFilter) : merged;
+  const rollup = isEvm ? coinRollup(fmerged) : [];
   const stats = isEvm ? swapStats(fmerged)
     : (cache.pnl&&cache.pnl.available ? {buys:cache.pnl.buys,sells:cache.pnl.sells,realized_pnl_usd:cache.pnl.realized_pnl_usd,window:cache.pnl.window} : null);
 
@@ -421,13 +423,14 @@ function renderDetail(){
 
   const chainTabs = sel.category==="evm" ? chainTabsHTML() : "";
 
-  const unrealized = (cache.hl && typeof cache.hl.unrealized_pnl==='number') ? cache.hl.unrealized_pnl : null;
+  const hasUnreal = rollup.some(r=>r.upnl!=null);
+  const unrealized = hasUnreal ? rollup.reduce((s,r)=>s+(r.upnl||0),0) : null;
   const uCls = unrealized==null?"":(unrealized>=0?"pos":"neg");
   const pnlScope = isEvmM ? (chainFilter?chainFilter.toUpperCase():"全链") : sel.chain.toUpperCase();
   const stats_html=`<div class="stats">
     <div class="stat"><div class="k">总资产${hlUsd>0?"（含HL）":""}</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
     <div class="stat"><div class="k">浮动盈亏 <span class="help" title="未平仓持仓按当前价的浮盈/浮亏（Hyperliquid）。EVM 现货持仓暂不计入。">?</span></div>
-      <div class="v ${uCls}">${(unrealized!=null&&hlUsd>0)?(unrealized>=0?"+":"")+usd(unrealized):"—"}</div></div>
+      <div class="v ${uCls}">${unrealized!=null?(unrealized>=0?"+":"")+usd(unrealized):"—"}</div></div>
     <div class="stat"><div class="k">已实现盈亏 <span class="help" title="卖出/平仓锁定的盈亏：HL 平仓 closedPnl + EVM 卖出回款−买入成本（近期可见）。">?</span></div>
       <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"} <small>${pnlScope}</small></div></div>
     <div class="stat"><div class="k">买/卖（近${stats?stats.window:0}笔）</div><div class="v">${stats?`${stats.buys}/${stats.sells}`:"—"}</div></div></div>`;
@@ -444,7 +447,7 @@ function renderDetail(){
       <button class="btn-ghost refresh-btn" onclick="openDetail(false)">↻ 刷新</button></div></div>`;
 
   const body=activeTab==="tx"
-    ? (isEvm ? (renderTradeSummary(fmerged) + renderTrades(fmerged, cache.swaps&&cache.swaps.__err)) : renderHistory(h))
+    ? (isEvm ? (renderTradeSummary(rollup) + renderTrades(fmerged, cache.swaps&&cache.swaps.__err)) : renderHistory(h))
     : (renderHL(cache.hl) + (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b)));
   document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
 }
@@ -466,39 +469,46 @@ function renderHL(hl){
   return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${ptable}${srows}</div>`;
 }
 
-function renderTradeSummary(list){
+// 按币种汇总成交，并结合当前持仓/现价计算浮动盈亏(HL 用真实值，EVM 用现价估算)
+function coinRollup(list){
   const m={};
   (list||[]).forEach(t=>{
     const k=t.token_symbol||'?';
-    const g=m[k]||(m[k]={coin:k,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0});
+    const g=m[k]||(m[k]={coin:k,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0,venue:''});
+    if(!g.venue) g.venue=t.venue||'';
     if(t.type==="BUY"){ g.buys++; g.buyAmt+=t.token_amount; g.buyVal+=t.value_usd; }
     else { g.sells++; g.sellAmt+=t.token_amount; g.sellVal+=t.value_usd; }
     if(t.closed_pnl!=null) g.realized+=t.closed_pnl;
   });
   const pos={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>pos[p.coin]=p);
-  // 有持仓但本窗口无成交的币也纳入，保证当前持仓一定显示
-  Object.keys(pos).forEach(c=>{ if(!m[c]) m[c]={coin:c,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0}; });
-  const wt=g=>{ const p=pos[g.coin]; return (p?Math.abs(p.value_usd):0)+g.buyVal+g.sellVal; };
-  const coins=Object.values(m).sort((a,b)=>wt(b)-wt(a)).slice(0,20);
-  if(!coins.length) return "";
-  const rows=coins.map(g=>{
-    const p=pos[g.coin];
-    const net=g.buyAmt-g.sellAmt;
+  const portMap={}; ((cache.port&&cache.port.tokens)||[]).forEach(t=>{ portMap[(t.symbol||'').toUpperCase()]=t; });
+  Object.keys(pos).forEach(c=>{ if(!m[c]) m[c]={coin:c,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0,venue:'HL'}; });
+  const rows=Object.values(m).map(g=>{
+    const p=pos[g.coin]; const pt=portMap[(g.coin||'').toUpperCase()];
     const avg = p ? p.entry_px : (g.buyAmt>0 ? g.buyVal/g.buyAmt : null);
-    const posVal = p ? p.value_usd : null;
-    const side = p ? `<span class="${p.side==='多'?'pos':'neg'}">${p.side}</span> ` : '';
-    const upnl = p ? p.unrealized_pnl : null;
-    return `<tr>
-      <td><b>${esc(g.coin)}</b></td>
-      <td>${g.buys}/${g.sells}</td>
-      <td class="${net>=0?'pos':'neg'}">${(net>=0?'+':'')+fmt(net)}</td>
-      <td>${price(avg)}</td>
-      <td>${posVal!=null?side+usd(posVal):'—'}</td>
-      <td>${upnl!=null?`<span class="${upnl>=0?'pos':'neg'}">${(upnl>=0?'+':'')+usd(upnl)}</span>`:'—'}</td>
-      <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td></tr>`;
-  }).join("");
+    let cur=null, posVal=null, upnl=null, isHL=false, side='';
+    if(p){ isHL=true; side=p.side; cur=(p.size? p.value_usd/Math.abs(p.size) : p.entry_px); posVal=p.value_usd; upnl=p.unrealized_pnl; }
+    else if(pt){ cur=(pt.price!=null?pt.price:null); posVal=(pt.usd_value!=null?pt.usd_value:null);
+      if(avg!=null && cur!=null && pt.amount) upnl=(cur-avg)*pt.amount; }  // EVM 浮盈估算=(现价-买入均价)×持仓
+    const venue = isHL ? 'HL' : (g.venue || (pt?pt.chain:'') || '');
+    return { coin:g.coin, buys:g.buys, sells:g.sells, net:g.buyAmt-g.sellAmt, realized:g.realized, avg, cur, posVal, upnl, isHL, side, venue };
+  });
+  rows.sort((a,b)=> (Math.abs(b.posVal||0)+b.buys+b.sells) - (Math.abs(a.posVal||0)+a.buys+a.sells));
+  return rows;
+}
+function renderTradeSummary(rows){
+  if(!rows || !rows.length) return "";
+  const trs=rows.slice(0,20).map(g=>`<tr>
+    <td><b>${esc(g.coin)}</b> ${g.venue?`<span class="chip"${g.venue==='HL'?' title="Hyperliquid"':''}>${g.venue==='HL'?'⚡HL':esc(String(g.venue).toUpperCase())}</span>`:''}</td>
+    <td>${g.buys}/${g.sells}</td>
+    <td class="${g.net>=0?'pos':'neg'}">${(g.net>=0?'+':'')+fmt(g.net)}</td>
+    <td>${price(g.avg)}</td>
+    <td>${price(g.cur)}</td>
+    <td>${g.posVal!=null?(g.isHL?`<span class="${g.side==='多'?'pos':'neg'}">${g.side}</span> `:'')+usd(g.posVal):'—'}</td>
+    <td>${g.upnl!=null?`<span class="${g.upnl>=0?'pos':'neg'}">${(g.upnl>=0?'+':'')+usd(g.upnl)}</span>`:'—'}</td>
+    <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td></tr>`).join("");
   return `<div class="summary-block"><div class="summary-head">币种汇总</div>
-    <div class="scroll-sm"><table><thead><tr><th>币种</th><th>买/卖</th><th>净数量</th><th>持仓均价</th><th>持仓金额</th><th>浮动盈亏</th><th>已实现盈亏</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    <div class="scroll-sm"><table><thead><tr><th>币种</th><th>买/卖</th><th>净数量</th><th>持仓均价</th><th>现价</th><th>持仓金额</th><th>浮动盈亏</th><th>已实现盈亏</th></tr></thead><tbody>${trs}</tbody></table></div></div>`;
 }
 function tradeBadge(s){
   const d=s.dir||"";
