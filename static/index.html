@@ -177,7 +177,9 @@ let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
 let typeFilter = "", coinFilter = "", sortKey = "", sortDir = "desc";  // 动作流列筛选/排序
 let timer = null, autoOn = true;
 let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
-let cardCache = {};  // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
+let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
+let detailCache = {}; // 详情数据快照，切换回最近看过的钱包时秒开
+function detailKey(s){ return s ? s.chain+":"+s.address+":"+s.category : ""; }
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -245,7 +247,7 @@ async function loadWallets(){
   list.innerHTML=d.wallets.map(w=>{
     const active=sel&&sel.chain===w.chain&&sel.address===w.address;
     const initial=(w.label||w.address).slice(0,1).toUpperCase();
-    return `<div class="wcard ${active?"active":""}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
+    return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
         <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
@@ -288,7 +290,7 @@ function queryAddress(add){
   const chain = cat==="evm" ? firstUsableEvm() : cat;
   if(!chainUsable(chain)) return toast(cat==="evm"?"请先在 .env 配置 ETHERSCAN_API_KEY":"该链未配置 API Key");
   sel={chain,address,label:"",category:cat}; activeTab="tx"; chainFilter=null; resetTradeFilters();
-  if(add) doAdd(chain,address); else { loadWallets(); openDetail(true); }
+  if(add) doAdd(chain,address); else { highlightActive(); openDetail(true); }
 }
 async function doAdd(chain,address){
   try{ const r=await api("/api/wallets",{method:"POST",body:JSON.stringify({chain,address,label:""})});
@@ -296,7 +298,8 @@ async function doAdd(chain,address){
   }catch(e){ toast(e.message); }
 }
 async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
-function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; resetTradeFilters(); loadWallets(); openDetail(true); }
+function highlightActive(){ const key=sel?sel.chain+":"+sel.address:""; document.querySelectorAll('.wcard').forEach(el=>el.classList.toggle('active', el.dataset.key===key)); }
+function selectWallet(w){ sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; resetTradeFilters(); highlightActive(); openDetail(true); }
 function switchChain(id){ if(!sel) return;
   if(sel.category==="evm"&&MORALIS){ chainFilter=(chainFilter===id?null:id); renderDetail(); }
   else { sel.chain=id; openDetail(true); } }
@@ -322,7 +325,13 @@ function toggleOnlyTrades(on){ onlyTrades=on; renderDetail(); }
 function swapStats(list){ let bu=0,se=0,evmB=0,evmS=0,hlPnl=0; (list||[]).forEach(x=>{ if(x.type==="BUY") bu++; else se++; if(x.closed_pnl!=null){ hlPnl+=x.closed_pnl; } else { if(x.type==="BUY") evmB+=x.value_usd; else evmS+=x.value_usd; } }); return {buys:bu,sells:se,realized_pnl_usd:hlPnl+(evmS-evmB),window:(list||[]).length}; }
 
 async function openDetail(skel){
-  if(!sel) return; const cur=sel;
+  if(!sel) return; const cur=sel; const key=detailKey(cur);
+  const c=detailCache[key];
+  if(skel && c && Date.now()-c.ts<45000){
+    cache={...c.snap, updated:c.ts}; renderDetail();  // 命中快照，秒开
+    startTimer(); loadAll(cur);                        // 后台静默刷新
+    return;
+  }
   if(skel) document.getElementById("detail").innerHTML=renderShell();
   startTimer(); await loadAll(cur);
 }
@@ -332,14 +341,12 @@ async function loadAll(cur){
   const addr=encodeURIComponent(cur.address);
   if(isEvmM){
     cache.bal=null;
-    // 先拿持仓（也据此得知哪几条链有余额），再只对这些链查买卖，省 CU
+    // HL 与持仓并发起飞；持仓先到即渲染，随后只对有余额的链查买卖
+    const pHl=api(`/api/hyperliquid?address=${addr}&fills=1`).then(d=>cache.hl=d).catch(()=>cache.hl=null);
     try{ cache.port=await api(`/api/portfolio?address=${addr}`); }catch(e){ cache.port={__err:e.message}; }
     if(JSON.stringify(sel)!==tag) return;
     cache.updated=Date.now(); renderDetail();
-    await Promise.all([
-      api(`/api/hyperliquid?address=${addr}&fills=1`).then(d=>cache.hl=d).catch(e=>cache.hl=null),
-      loadStreamInto(cur),
-    ]);
+    await Promise.all([ pHl, loadStreamInto(cur) ]);
   } else {
     cache.port=null;
     const tasks=[ api(`/api/balance?chain=${cur.chain}&address=${addr}`).then(d=>cache.bal=d).catch(e=>cache.bal={__err:e.message}) ];
@@ -349,6 +356,7 @@ async function loadAll(cur){
   }
   if(JSON.stringify(sel)!==tag) return;
   cache.updated=Date.now(); renderDetail();
+  detailCache[detailKey(cur)]={ snap:{port:cache.port,bal:cache.bal,hist:cache.hist,pnl:cache.pnl,swaps:cache.swaps,hl:cache.hl}, ts:Date.now() };
 }
 async function loadStreamInto(cur){
   if(cur.category==="evm" && MORALIS){
@@ -500,7 +508,7 @@ function renderTradeSummary(rows){
   if(!rows || !rows.length) return "";
   const trs=rows.slice(0,20).map(g=>`<tr>
     <td><b>${esc(g.coin)}</b> ${g.venue?`<span class="chip"${g.venue==='HL'?' title="Hyperliquid"':''}>${g.venue==='HL'?'⚡HL':esc(String(g.venue).toUpperCase())}</span>`:''}</td>
-    <td>${g.buys}/${g.sells}</td>
+    <td${(g.buys+g.sells===0 && g.posVal!=null)?' title="持仓建于更早成交，不在近期窗口内"':''}>${g.buys}/${g.sells}</td>
     <td class="${g.net>=0?'pos':'neg'}">${(g.net>=0?'+':'')+fmt(g.net)}</td>
     <td>${price(g.avg)}</td>
     <td>${price(g.cur)}</td>

@@ -9,6 +9,7 @@ Docs: https://docs.moralis.com/web3-data-api/evm
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 import httpx
@@ -111,17 +112,21 @@ async def evm_portfolio(
     per_chain: dict[str, float] = {}
     total = 0.0
 
-    for c in chains:
+    async def _tokens(c):
         mc = MORALIS_CHAIN.get(c)
         if not mc:
-            continue
+            return c, None
         try:
-            data = await _get(
+            return c, await _get(
                 http, key, f"/wallets/{address}/tokens",
                 [("chain", mc), ("limit", "100")],
             )
         except ChainError:
-            continue  # one chain failing shouldn't drop the whole portfolio
+            return c, None  # one chain failing shouldn't drop the whole portfolio
+
+    for c, data in await asyncio.gather(*[_tokens(c) for c in chains]):
+        if not data:
+            continue
         for t in data.get("result", []) or []:
             contract = (t.get("token_address") or "").lower()
             if t.get("possible_spam"):
@@ -164,17 +169,21 @@ async def evm_swaps(
     buy or a sell and provides per-unit USD price + total USD value — far more
     accurate than inferring trades from raw transfers.
     """
-    out: list[dict] = []
-    for c in chains:
+    async def _swaps(c):
         mc = MORALIS_CHAIN.get(c)
         if not mc:
-            continue
+            return c, None
         try:
-            data = await _get(
+            return c, await _get(
                 http, key, f"/wallets/{address}/swaps",
                 [("chain", mc), ("order", "DESC"), ("limit", str(limit))],
             )
         except ChainError:
+            return c, None
+
+    out: list[dict] = []
+    for c, data in await asyncio.gather(*[_swaps(c) for c in chains]):
+        if not data:
             continue
         explorer = _EVM_META.get(c, {}).get("explorer", "")
         for s in data.get("result", []) or []:

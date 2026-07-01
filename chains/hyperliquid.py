@@ -9,6 +9,7 @@ Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import httpx
@@ -115,54 +116,54 @@ async def hyperliquid_state(
     """
     address = address.strip().lower()
 
-    main = await _post(http, {"type": "clearinghouseState", "user": address})
-    account_value, positions = _parse_clearinghouse(main)
+    # Fetch the main account, spot state, mid prices and fills concurrently.
+    keys = ["main", "spot", "mids"] + (["fills"] if with_fills else [])
+    coros = {
+        "main": _post(http, {"type": "clearinghouseState", "user": address}),
+        "spot": _post(http, {"type": "spotClearinghouseState", "user": address}),
+        "mids": _all_mids(http),
+    }
+    if with_fills:
+        coros["fills"] = _user_fills(http, address)
+    res = await asyncio.gather(*[coros[k] for k in keys], return_exceptions=True)
+    got = {k: (v if not isinstance(v, Exception) else None) for k, v in zip(keys, res)}
+
+    account_value, positions = _parse_clearinghouse(got.get("main"))
 
     # Spot balances (best effort; valued via mid prices where available).
     spot: list[dict] = []
     spot_usd = 0.0
-    try:
-        sp = await _post(http, {"type": "spotClearinghouseState", "user": address})
-        mids = await _all_mids(http)
-        for b in (sp or {}).get("balances", []) or []:
-            coin = b.get("coin")
-            total = _f(b.get("total"))
-            if total <= 0:
-                continue
-            if coin == "USDC":
-                val = total
-            else:
-                px = mids.get(coin)
-                val = total * _f(px) if px else 0.0
-            spot.append({"coin": coin, "amount": total, "usd": val})
-            spot_usd += val
-    except ChainError:
-        pass
+    mids = got.get("mids") or {}
+    for b in (got.get("spot") or {}).get("balances", []) or []:
+        coin = b.get("coin")
+        total = _f(b.get("total"))
+        if total <= 0:
+            continue
+        val = total if coin == "USDC" else (total * _f(mids.get(coin)) if mids.get(coin) else 0.0)
+        spot.append({"coin": coin, "amount": total, "usd": val})
+        spot_usd += val
 
-    fills: list = []
-    if with_fills:
-        try:
-            fills = await _user_fills(http, address)
-        except ChainError:
-            pass
+    fills: list = got.get("fills") or []
+    if not isinstance(fills, list):
+        fills = []
 
     # Builder-deployed perps (HIP-3): coin looks like "xyz:GOLD". The main
-    # clearinghouse omits them, so query each sub-dex seen in the fills.
-    dexes = set()
-    for f in fills:
-        coin = f.get("token_symbol") or ""
-        if ":" in coin:
-            dexes.add(coin.split(":")[0])
-    for dex in dexes:
-        try:
-            ch = await _post(
-                http, {"type": "clearinghouseState", "user": address, "dex": dex}
-            )
-        except ChainError:
-            continue
-        av, pos = _parse_clearinghouse(ch, dex=dex)
-        account_value += av
-        positions += pos
+    # clearinghouse omits them, so query each sub-dex seen in the fills (parallel).
+    dexes = {c.split(":")[0] for f in fills if ":" in (c := f.get("token_symbol") or "")}
+    if dexes:
+        async def _dex(d):
+            try:
+                return d, await _post(
+                    http, {"type": "clearinghouseState", "user": address, "dex": d}
+                )
+            except ChainError:
+                return d, None
+        for d, ch in await asyncio.gather(*[_dex(d) for d in dexes]):
+            if ch is None:
+                continue
+            av, pos = _parse_clearinghouse(ch, dex=d)
+            account_value += av
+            positions += pos
 
     positions.sort(key=lambda x: abs(x["value_usd"]), reverse=True)
     spot.sort(key=lambda x: x["usd"], reverse=True)
