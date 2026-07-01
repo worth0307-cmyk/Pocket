@@ -187,7 +187,7 @@
         <span style="font-weight:400;color:var(--muted);font-size:12px;margin-left:8px">点列头排序（HL 仅提供 日/周/月/总）</span>
         <div class="ctrls">
           <select id="lbLimit" class="th-filter" style="max-width:none;font-size:13px" onchange="loadLeaderboard()">
-            <option value="25">前 25</option><option value="50" selected>前 50</option><option value="100">前 100</option>
+            <option value="25" selected>前 25</option><option value="50">前 50</option><option value="100">前 100</option>
           </select>
           <span class="lb-close" onclick="closeLeaderboard()">✕</span>
         </div>
@@ -692,7 +692,7 @@ async function loadLeaderboard(){
   try{ const d=await api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=${lim}`); lbRows=d.rows||[]; renderLeaderboard(); }
   catch(e){ body.innerHTML=`<div class="note">加载失败：${esc(e.message)}（需能访问 Hyperliquid）</div>`; }
 }
-function lbPnlCell(w){ if(!w) return '<td>—</td>'; return `<td class="amt-cell ${w.pnl>=0?'pos':'neg'}" title="ROI ${(w.roi*100).toFixed(2)}%">${(w.pnl>=0?'+':'')+usd(w.pnl)}</td>`; }
+function lbPnlCell(w){ if(!w) return '<td>—</td>'; return `<td class="amt-cell ${w.pnl>=0?'pos':'neg'}">${(w.pnl>=0?'+':'')+usd(w.pnl)}<div style="font-weight:500;font-size:11px;color:var(--muted)">ROI ${(w.roi>=0?'+':'')+(w.roi*100).toFixed(1)}%</div></td>`; }
 function renderLeaderboard(){
   if(!lbRows.length){ document.getElementById("lbBody").innerHTML='<div class="note">暂无数据（需能访问 Hyperliquid）</div>'; return; }
   const head=LB_COLS.map(([k,label])=>{
@@ -729,7 +729,7 @@ async function importSelected(){
   try{ await loadChains(); await loadWallets(); onAddrInput(); syncListHeight(); }
   catch(e){ document.getElementById("walletList").innerHTML=`<div class="empty">加载失败：${esc(e.message)}</div>`; }
   // 后台预取排行榜(暖 5 分钟缓存)，点开时秒显
-  api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=50`).then(d=>{ lbRows=d.rows||[]; }).catch(()=>{});
+  api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=25`).then(d=>{ lbRows=d.rows||[]; }).catch(()=>{});
 })();
 </script>
 </body>
