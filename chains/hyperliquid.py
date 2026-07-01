@@ -17,11 +17,16 @@ import httpx
 from .base import ChainError
 
 HL_API = "https://api.hyperliquid.xyz/info"
+HL_LEADERBOARD = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 
 # Market-wide mid prices are identical for every wallet, so cache them briefly
 # to avoid an extra POST on every state lookup (HL is keyless but IP-rate-limited).
 _mids_cache: dict = {"data": None, "ts": 0.0}
 _MIDS_TTL = 30
+
+# The leaderboard is a large, slow-changing JSON — cache it for a few minutes.
+_lb_cache: dict = {"rows": None, "ts": 0.0}
+_LB_TTL = 300
 
 
 async def _post(http: httpx.AsyncClient, body: dict) -> object:
@@ -50,6 +55,51 @@ async def _all_mids(http: httpx.AsyncClient) -> dict:
         _mids_cache["ts"] = now
         return mids
     return {}
+
+
+async def _leaderboard_rows(http: httpx.AsyncClient) -> list:
+    now = time.time()
+    if _lb_cache["rows"] is not None and now - _lb_cache["ts"] < _LB_TTL:
+        return _lb_cache["rows"]
+    try:
+        resp = await http.get(HL_LEADERBOARD, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ChainError(f"hyperliquid leaderboard failed: {exc}") from exc
+    rows = data.get("leaderboardRows", []) or []
+    _lb_cache["rows"] = rows
+    _lb_cache["ts"] = now
+    return rows
+
+
+async def leaderboard(
+    http: httpx.AsyncClient, window: str = "day", limit: int = 50
+) -> list[dict]:
+    """Top traders from the Hyperliquid leaderboard.
+
+    ``window`` is one of day/week/month/allTime (ranked by that window's PnL),
+    or "value" (ranked by current account value).
+    """
+    rows = await _leaderboard_rows(http)
+    perf_key = window if window in ("day", "week", "month", "allTime") else "allTime"
+    out = []
+    for r in rows:
+        perf = dict(r.get("windowPerformances") or [])
+        w = perf.get(perf_key, {}) or {}
+        out.append({
+            "address": r.get("ethAddress"),
+            "display_name": r.get("displayName") or "",
+            "account_value": _f(r.get("accountValue")),
+            "pnl": _f(w.get("pnl")),
+            "roi": _f(w.get("roi")),
+            "vlm": _f(w.get("vlm")),
+        })
+    if window == "value":
+        out.sort(key=lambda x: x["account_value"], reverse=True)
+    else:
+        out.sort(key=lambda x: x["pnl"], reverse=True)
+    return out[: max(1, min(limit, 200))]
 
 
 async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 200) -> list:

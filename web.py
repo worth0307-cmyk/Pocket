@@ -69,6 +69,16 @@ class AddWallet(BaseModel):
     label: str = ""
 
 
+class BatchItem(BaseModel):
+    address: str
+    label: str = ""
+
+
+class BatchAdd(BaseModel):
+    chain: str = "eth"
+    items: list[BatchItem]
+
+
 def create_web_app(config: Config, db: WalletDB) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -241,6 +251,37 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             )
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.get("/api/hl_leaderboard")
+    async def api_hl_leaderboard(
+        window: str = "day",
+        limit: int = Query(50, ge=1, le=200),
+        _: None = Depends(auth),
+    ) -> dict:
+        try:
+            rows = await hl.leaderboard(app.state.http, window=window, limit=limit)
+        except ChainError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        return {"rows": rows, "window": window}
+
+    @app.post("/api/wallets/batch")
+    async def api_batch(body: BatchAdd, _: None = Depends(auth)) -> dict:
+        from chains.evm import _ADDR_RE
+        chain = (body.chain or "eth").lower()
+        added = skipped = invalid = 0
+        for it in body.items[:200]:
+            a = (it.address or "").strip()
+            if not _ADDR_RE.match(a):
+                invalid += 1
+                continue
+            created, _w = db.add_wallet(
+                chain, a.lower(), (it.label or "").strip(), config.alert_chat_id
+            )
+            if created:
+                added += 1
+            else:
+                skipped += 1
+        return {"added": added, "skipped": skipped, "invalid": invalid}
 
     @app.get("/api/hyperliquid")
     async def api_hyperliquid(
