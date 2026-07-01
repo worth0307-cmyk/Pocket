@@ -27,6 +27,8 @@ _MIDS_TTL = 30
 # The leaderboard is a large, slow-changing JSON — cache it for a few minutes.
 _lb_cache: dict = {"rows": None, "ts": 0.0}
 _LB_TTL = 300
+# Windows the Hyperliquid leaderboard actually exposes (no biweekly / quarter).
+LB_WINDOWS = ("day", "week", "month", "allTime")
 
 
 async def _post(http: httpx.AsyncClient, body: dict) -> object:
@@ -58,6 +60,8 @@ async def _all_mids(http: httpx.AsyncClient) -> dict:
 
 
 async def _leaderboard_rows(http: httpx.AsyncClient) -> list:
+    """Download + normalize the leaderboard once, then cache the processed rows
+    (with every window's PnL/ROI) so subsequent sorts are just an in-memory sort."""
     now = time.time()
     if _lb_cache["rows"] is not None and now - _lb_cache["ts"] < _LB_TTL:
         return _lb_cache["rows"]
@@ -67,14 +71,21 @@ async def _leaderboard_rows(http: httpx.AsyncClient) -> list:
         data = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise ChainError(f"hyperliquid leaderboard failed: {exc}") from exc
-    rows = data.get("leaderboardRows", []) or []
-    _lb_cache["rows"] = rows
+    out = []
+    for r in data.get("leaderboardRows", []) or []:
+        perf = dict(r.get("windowPerformances") or [])
+        row = {
+            "address": r.get("ethAddress"),
+            "display_name": r.get("displayName") or "",
+            "account_value": _f(r.get("accountValue")),
+        }
+        for k in LB_WINDOWS:
+            w = perf.get(k) or {}
+            row[k] = {"pnl": _f(w.get("pnl")), "roi": _f(w.get("roi"))}
+        out.append(row)
+    _lb_cache["rows"] = out
     _lb_cache["ts"] = now
-    return rows
-
-
-# Windows the Hyperliquid leaderboard actually exposes (no biweekly / quarter).
-LB_WINDOWS = ("day", "week", "month", "allTime")
+    return out
 
 
 async def leaderboard(
@@ -88,28 +99,15 @@ async def leaderboard(
     ``sort`` is "value" (account value) or one of day/week/month/allTime (that
     window's PnL). ``direction`` is "desc" (default) or "asc".
     """
-    rows = await _leaderboard_rows(http)
-    out = []
-    for r in rows:
-        perf = dict(r.get("windowPerformances") or [])
-        row = {
-            "address": r.get("ethAddress"),
-            "display_name": r.get("displayName") or "",
-            "account_value": _f(r.get("accountValue")),
-        }
-        for k in LB_WINDOWS:
-            w = perf.get(k) or {}
-            row[k] = {"pnl": _f(w.get("pnl")), "roi": _f(w.get("roi"))}
-        out.append(row)
-
+    rows = await _leaderboard_rows(http)  # processed + cached
     if sort == "value":
         keyf = lambda x: x["account_value"]
     elif sort in LB_WINDOWS:
         keyf = lambda x: x[sort]["pnl"]
     else:
         keyf = lambda x: x["week"]["pnl"]
-    out.sort(key=keyf, reverse=(direction != "asc"))
-    return out[: max(1, min(limit, 200))]
+    ranked = sorted(rows, key=keyf, reverse=(direction != "asc"))
+    return ranked[: max(1, min(limit, 200))]
 
 
 async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 200) -> list:
