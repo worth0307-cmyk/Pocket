@@ -228,6 +228,10 @@ async def hyperliquid_state(
 
     unrealized_pnl = sum(p["unrealized_pnl"] for p in positions)
     realized_pnl = sum(f["closed_pnl"] for f in fills)
+    # Current mid prices for the coins we reference (so already-closed coins
+    # still show a 现价), kept small by filtering to seen coins.
+    seen = {p["coin"] for p in positions} | {f.get("token_symbol") for f in fills}
+    mids_out = {c: _f(mids[c]) for c in seen if c and c in mids}
     return {
         "account_value": account_value,
         "positions": positions,
@@ -237,4 +241,5 @@ async def hyperliquid_state(
         "unrealized_pnl": unrealized_pnl,
         "realized_pnl": realized_pnl,
         "fills": fills,
+        "mids": mids_out,
     }

@@ -141,6 +141,8 @@
   .modal-foot { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-top: 1px solid var(--border); }
   .lb-h { cursor: pointer; user-select: none; white-space: nowrap; }
   .lb-h:hover, .lb-h.on { color: var(--accent); }
+  .lb-clear { background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .lb-clear:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
   .lb-close { cursor: pointer; color: var(--muted); font-size: 18px; padding: 0 4px; }
   .lb-close:hover { color: var(--red); }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
@@ -170,7 +172,8 @@
     </div>
     <div class="grid">
       <div>
-        <div class="section-title">跟踪清单 <span class="count" id="wcount"></span></div>
+        <div class="section-title"><span>跟踪清单 <span class="count" id="wcount"></span></span>
+          <button class="lb-clear" id="clearBtn" onclick="clearAllWallets()" style="display:none">清空</button></div>
         <div id="walletList"><div class="spinner">加载中…</div></div>
       </div>
       <div class="panel" id="detail">
@@ -277,6 +280,7 @@ async function loadWallets(){
   const d=await api("/api/wallets");
   trackedAddrs=new Set(d.wallets.map(w=>(w.address||'').toLowerCase()));
   document.getElementById("wcount").textContent = d.wallets.length?"("+d.wallets.length+")":"";
+  document.getElementById("clearBtn").style.display = d.wallets.length?"":"none";
   const list=document.getElementById("walletList");
   if(!d.wallets.length){ list.innerHTML='<div class="empty" style="border-style:dashed">还没有跟踪任何钱包<br><span style="font-size:12px;color:var(--muted-2)">上方粘贴地址后点「+ 跟踪」</span></div>'; return; }
   list.innerHTML=d.wallets.map(w=>{
@@ -336,6 +340,14 @@ async function doAdd(chain,address){
   }catch(e){ toast(e.message); }
 }
 async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
+async function clearAllWallets(){
+  if(!confirm("确定清空全部跟踪的钱包？此操作不可撤销。")) return;
+  try{ const r=await api("/api/wallets",{method:"DELETE"});
+    toast(`已清空 ${r.removed} 个钱包`); sel=null; stopTimer(); cardCache={}; detailCache={};
+    document.getElementById("detail").innerHTML='<div class="empty" style="margin:0;border:none">粘贴一个钱包地址并点「查询」，或从左侧选择已跟踪的钱包。</div>';
+    await loadWallets();
+  }catch(e){ toast(e.message); }
+}
 function highlightActive(){ const key=sel?sel.chain+":"+sel.address:""; document.querySelectorAll('.wcard').forEach(el=>el.classList.toggle('active', el.dataset.key===key)); }
 function syncListHeight(){
   const detail=document.getElementById("detail"), list=document.getElementById("walletList"), title=document.querySelector(".section-title");
@@ -538,6 +550,7 @@ function coinRollup(list){
   });
   const pos={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>pos[p.coin]=p);
   const portMap={}; ((cache.port&&cache.port.tokens)||[]).forEach(t=>{ portMap[(t.symbol||'').toUpperCase()]=t; });
+  const mids=(cache.hl&&cache.hl.mids)||{};
   Object.keys(pos).forEach(c=>{ if(!m[c]) m[c]={coin:c,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0,venue:'HL'}; });
   const rows=Object.values(m).map(g=>{
     const p=pos[g.coin]; const pt=portMap[(g.coin||'').toUpperCase()];
@@ -546,6 +559,7 @@ function coinRollup(list){
     if(p){ isHL=true; side=p.side; cur=(p.size? p.value_usd/Math.abs(p.size) : p.entry_px); posVal=p.value_usd; upnl=p.unrealized_pnl; }
     else if(pt){ cur=(pt.price!=null?pt.price:null); posVal=(pt.usd_value!=null?pt.usd_value:null);
       if(avg!=null && cur!=null && pt.amount) upnl=(cur-avg)*pt.amount; }  // EVM 浮盈估算=(现价-买入均价)×持仓
+    if(cur==null && mids[g.coin]!=null) cur=mids[g.coin];  // 已平仓的币用盘口价兜底显示现价
     const venue = isHL ? 'HL' : (g.venue || (pt?pt.chain:'') || '');
     return { coin:g.coin, buys:g.buys, sells:g.sells, net:g.buyAmt-g.sellAmt, realized:g.realized, avg, cur, posVal, upnl, isHL, side, venue };
   });

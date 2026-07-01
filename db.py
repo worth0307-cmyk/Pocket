@@ -113,6 +113,14 @@ class WalletDB:
             self._conn.commit()
             return self._row(row)
 
+    def clear(self) -> int:
+        """Delete all wallets; returns how many were removed."""
+        with self._lock:
+            n = self._conn.execute("SELECT COUNT(*) FROM wallets").fetchone()[0]
+            self._conn.execute("DELETE FROM wallets")
+            self._conn.commit()
+            return int(n)
+
     def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
         with self._lock:
             row = self._conn.execute(

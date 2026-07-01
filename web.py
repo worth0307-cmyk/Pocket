@@ -138,6 +138,10 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 pass
         return {"created": created, "wallet": _wallet_dict(wallet)}
 
+    @app.delete("/api/wallets")
+    async def api_clear(_: None = Depends(auth)) -> dict:
+        return {"removed": db.clear()}
+
     @app.delete("/api/wallets/{wallet_id}")
     async def api_remove(wallet_id: int, _: None = Depends(auth)) -> dict:
         removed = db.remove_by_id(wallet_id)
