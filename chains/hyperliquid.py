@@ -24,9 +24,9 @@ HL_LEADERBOARD = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 _mids_cache: dict = {"data": None, "ts": 0.0}
 _MIDS_TTL = 30
 
-# The leaderboard is a large, slow-changing JSON — cache it for a few minutes.
+# The leaderboard is a large, slow-changing JSON — cache it for a while.
 _lb_cache: dict = {"rows": None, "ts": 0.0}
-_LB_TTL = 300
+_LB_TTL = 600  # 10 分钟
 # Windows the Hyperliquid leaderboard actually exposes (no biweekly / quarter).
 LB_WINDOWS = ("day", "week", "month", "allTime")
 
