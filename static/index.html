@@ -23,7 +23,7 @@
     display: grid; place-items: center; color: #fff; font-weight: 900; box-shadow: 0 4px 12px rgba(255,96,52,.35); }
   .logo small { color: var(--muted); font-weight: 500; font-size: 12px; }
   header .hint { color: var(--muted); font-size: 12px; }
-  .container { max-width: 1280px; margin: 0 auto; padding: 26px 26px 60px; }
+  .container { max-width: 1800px; margin: 0 auto; padding: 22px 32px 60px; }
   .hero { margin-bottom: 24px; }
   .search { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
     padding: 10px 10px 10px 18px; display: flex; align-items: center; gap: 12px; }
@@ -143,6 +143,9 @@
   .lb-h:hover, .lb-h.on { color: var(--accent); }
   .lb-clear { background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
   .lb-clear:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
+  .an-btn { background: var(--accent-soft); color: var(--accent); border: 1px solid #ffd9cc; border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .an-btn:hover { filter: brightness(.97); }
+  .wsel { width: 16px; height: 16px; cursor: pointer; flex: 0 0 auto; accent-color: var(--accent); }
   .lb-close { cursor: pointer; color: var(--muted); font-size: 18px; padding: 0 4px; }
   .lb-close:hover { color: var(--red); }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
@@ -173,7 +176,10 @@
     <div class="grid">
       <div>
         <div class="section-title"><span>跟踪清单 <span class="count" id="wcount"></span></span>
-          <button class="lb-clear" id="clearBtn" onclick="clearAllWallets()" style="display:none">清空</button></div>
+          <span style="display:flex;gap:8px">
+            <button class="an-btn" id="analyzeBtn" onclick="analyzeSelected()" style="display:none"></button>
+            <button class="lb-clear" id="clearBtn" onclick="clearAllWallets()" style="display:none">清空</button>
+          </span></div>
         <div id="walletList"><div class="spinner">加载中…</div></div>
       </div>
       <div class="panel" id="detail">
@@ -200,6 +206,14 @@
       </div>
     </div>
   </div>
+  <div id="anModal" class="modal-bg" onclick="if(event.target===this)closeAnalysis()">
+    <div class="modal" style="max-width:1000px">
+      <div class="modal-head">📊 多钱包持仓方向分析
+        <span class="lb-close" onclick="closeAnalysis()">✕</span>
+      </div>
+      <div class="modal-body" id="anBody"><div class="spinner">加载中…</div></div>
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
 <script>
 const EVM_CHAINS = ["eth","bsc","base","arb","polygon","op"];
@@ -220,6 +234,7 @@ let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重
 let detailCache = {}; // 详情数据快照，切换回最近看过的钱包时秒开
 function detailKey(s){ return s ? s.chain+":"+s.address+":"+s.category : ""; }
 let trackedAddrs = new Set(), lbRows = [], lbSel = new Set(), lbSort = "week", lbDir = "desc";
+let analysisSet = new Set();  // 多选做持仓方向分析的地址
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -280,8 +295,10 @@ function onAddrInput(){
 async function loadWallets(){
   const d=await api("/api/wallets");
   trackedAddrs=new Set(d.wallets.map(w=>(w.address||'').toLowerCase()));
+  analysisSet=new Set([...analysisSet].filter(a=>trackedAddrs.has((a||'').toLowerCase())));
   document.getElementById("wcount").textContent = d.wallets.length?"("+d.wallets.length+")":"";
   document.getElementById("clearBtn").style.display = d.wallets.length?"":"none";
+  updateAnalyzeBtn();
   const list=document.getElementById("walletList");
   if(!d.wallets.length){ list.innerHTML='<div class="empty" style="border-style:dashed">还没有跟踪任何钱包<br><span style="font-size:12px;color:var(--muted-2)">上方粘贴地址后点「+ 跟踪」</span></div>'; return; }
   list.innerHTML=d.wallets.map(w=>{
@@ -289,6 +306,7 @@ async function loadWallets(){
     const initial=(w.label||w.address).slice(0,1).toUpperCase();
     const cc=cardCache[w.chain+":"+w.address];  // 用缓存值初始化，避免重建时闪 —/重读错觉
     return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
+      ${EVM_CHAINS.includes(w.chain)?`<input type="checkbox" class="wsel" title="选入多钱包分析" onclick="event.stopPropagation();toggleAnalysis('${w.address}',this.checked)" ${analysisSet.has(w.address)?'checked':''}>`:''}
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
         <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
@@ -694,6 +712,40 @@ function renderHistory(h){
   return `<table><thead><tr><th>类型</th><th>详情（币种·数量·计价）</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function switchTab(t){ activeTab=t; renderDetail(); }
+
+// ---- 多钱包持仓方向分析 ----
+function toggleAnalysis(a,on){ if(on) analysisSet.add(a); else analysisSet.delete(a); updateAnalyzeBtn(); }
+function updateAnalyzeBtn(){ const b=document.getElementById("analyzeBtn"); if(!b) return; if(analysisSet.size){ b.style.display=""; b.textContent=`分析 (${analysisSet.size})`; } else b.style.display="none"; }
+function closeAnalysis(){ document.getElementById("anModal").classList.remove("show"); }
+async function analyzeSelected(){
+  if(!analysisSet.size) return toast("请先勾选钱包（卡片左侧勾选框）");
+  document.getElementById("anModal").classList.add("show");
+  document.getElementById("anBody").innerHTML='<div class="spinner">分析中…（读取各钱包 Hyperliquid 持仓）</div>';
+  try{ const d=await api("/api/analyze",{method:"POST",body:JSON.stringify({addresses:[...analysisSet]})}); renderAnalysis(d); }
+  catch(e){ document.getElementById("anBody").innerHTML=`<div class="note">分析失败：${esc(e.message)}</div>`; }
+}
+function renderAnalysis(d){
+  const head=`<div style="padding:14px 18px;display:flex;gap:24px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+    <div><div style="color:var(--muted);font-size:12px">分析钱包</div><div style="font-weight:800">${d.wallets} 个 · ${d.with_positions} 个有持仓</div></div>
+    <div><div style="color:var(--muted);font-size:12px">合计 HL 资产</div><div style="font-weight:800">${usd(d.total_account_value)}</div></div>
+    <div><div style="color:var(--muted);font-size:12px">合计浮动盈亏</div><div style="font-weight:800" class="${d.total_upnl>=0?'pos':'neg'}">${(d.total_upnl>=0?'+':'')+usd(d.total_upnl)}</div></div></div>`;
+  if(!d.coins||!d.coins.length){ document.getElementById("anBody").innerHTML=head+`<div class="note">所选钱包在 Hyperliquid 上没有可分析的持仓。</div>`; return; }
+  const rows=d.coins.map(c=>{
+    const badge=c.bias==='一致做多'?'b-open-long':c.bias==='一致做空'?'b-open-short':'b-SWAP';
+    return `<tr>
+      <td><b>${esc(c.coin)}</b></td>
+      <td><span class="badge ${badge}">${c.bias}</span></td>
+      <td>${c.long_wallets?`<span class="pos">${c.long_wallets} 个 · ${usd(c.long_notional)}</span>`:'—'}</td>
+      <td>${c.long_avg!=null?price(c.long_avg):'—'}</td>
+      <td>${c.short_wallets?`<span class="neg">${c.short_wallets} 个 · ${usd(c.short_notional)}</span>`:'—'}</td>
+      <td>${c.short_avg!=null?price(c.short_avg):'—'}</td>
+      <td class="${c.net_notional>=0?'pos':'neg'}">${c.net_notional>=0?'净多 ':'净空 '}${usd(Math.abs(c.net_notional))}</td>
+      <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`;
+  }).join("");
+  document.getElementById("anBody").innerHTML=head+`<div class="scroll-area" style="max-height:62vh"><table><thead><tr>
+    <th>币种</th><th>方向共识</th><th>多头(钱包·名义)</th><th>多头均价</th><th>空头(钱包·名义)</th><th>空头均价</th><th>净方向</th><th>合计浮盈</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 
 // ---- Hyperliquid 排行榜 ----
 function openLeaderboard(){ document.getElementById("lbModal").classList.add("show"); if(lbRows.length) renderLeaderboard(); else loadLeaderboard(); }

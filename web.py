@@ -7,6 +7,7 @@ and action history on demand; write endpoints manage the watch-list.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -77,6 +78,10 @@ class BatchItem(BaseModel):
 class BatchAdd(BaseModel):
     chain: str = "eth"
     items: list[BatchItem]
+
+
+class AnalyzeReq(BaseModel):
+    addresses: list[str]
 
 
 def create_web_app(config: Config, db: WalletDB) -> FastAPI:
@@ -255,6 +260,67 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             )
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.post("/api/analyze")
+    async def api_analyze(body: AnalyzeReq, _: None = Depends(auth)) -> dict:
+        """Aggregate the Hyperliquid positions of several wallets by coin, to
+        gauge collective direction (long/short), avg entry, conflicts, PnL."""
+        from chains.evm import _ADDR_RE
+        addrs = [a.strip() for a in body.addresses[:50] if _ADDR_RE.match(a.strip())]
+        if not addrs:
+            raise HTTPException(status_code=400, detail="没有有效的 EVM/HL 地址")
+        states = await asyncio.gather(
+            *[hl.hyperliquid_state(app.state.http, a) for a in addrs],
+            return_exceptions=True,
+        )
+
+        def leg():
+            return {"n": 0, "notional": 0.0, "size": 0.0, "sxe": 0.0, "upnl": 0.0}
+
+        coins: dict = {}
+        total_acct = total_upnl = 0.0
+        with_pos = 0
+        for st in states:
+            if not isinstance(st, dict):
+                continue
+            total_acct += st.get("account_value", 0) or 0
+            positions = st.get("positions") or []
+            if positions:
+                with_pos += 1
+            for p in positions:
+                c = p.get("coin") or "?"
+                g = coins.setdefault(c, {"long": leg(), "short": leg()})
+                lg = g["long"] if p.get("side") == "多" else g["short"]
+                sz = abs(p.get("size") or 0)
+                lg["n"] += 1
+                lg["notional"] += abs(p.get("value_usd") or 0)
+                lg["size"] += sz
+                if p.get("entry_px"):
+                    lg["sxe"] += p["entry_px"] * sz
+                up = p.get("unrealized_pnl") or 0
+                lg["upnl"] += up
+                total_upnl += up
+
+        out = []
+        for c, g in coins.items():
+            L, S = g["long"], g["short"]
+            out.append({
+                "coin": c,
+                "long_wallets": L["n"], "long_notional": L["notional"],
+                "long_avg": (L["sxe"] / L["size"]) if L["size"] else None,
+                "short_wallets": S["n"], "short_notional": S["notional"],
+                "short_avg": (S["sxe"] / S["size"]) if S["size"] else None,
+                "net_notional": L["notional"] - S["notional"],
+                "bias": ("一致做多" if S["n"] == 0 else
+                         "一致做空" if L["n"] == 0 else "多空分歧"),
+                "upnl": L["upnl"] + S["upnl"],
+            })
+        out.sort(key=lambda x: x["long_notional"] + x["short_notional"], reverse=True)
+        return {
+            "wallets": len(addrs), "with_positions": with_pos,
+            "total_account_value": total_acct, "total_upnl": total_upnl,
+            "coins": out,
+        }
 
     @app.get("/api/hl_leaderboard")
     async def api_hl_leaderboard(
