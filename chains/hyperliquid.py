@@ -110,7 +110,7 @@ async def leaderboard(
     return ranked[: max(1, min(limit, 200))]
 
 
-async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 200) -> list:
+async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 300) -> list:
     """Recent Hyperliquid trades (fills) as normalized buy/sell actions."""
     data = await _post(http, {"type": "userFills", "user": address})
     out: list[dict] = []
