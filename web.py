@@ -70,6 +70,10 @@ class AddWallet(BaseModel):
     label: str = ""
 
 
+class RenameReq(BaseModel):
+    label: str = ""
+
+
 class BatchItem(BaseModel):
     address: str
     label: str = ""
@@ -153,6 +157,15 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         if not removed:
             raise HTTPException(status_code=404, detail="未找到")
         return {"removed": _wallet_dict(removed)}
+
+    @app.patch("/api/wallets/{wallet_id}")
+    async def api_rename(
+        wallet_id: int, body: RenameReq, _: None = Depends(auth)
+    ) -> dict:
+        wallet = db.set_label(wallet_id, body.label.strip())
+        if not wallet:
+            raise HTTPException(status_code=404, detail="未找到")
+        return {"wallet": _wallet_dict(wallet)}
 
     @app.get("/api/balance")
     async def api_balance(

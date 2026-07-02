@@ -69,6 +69,8 @@
   .det-head .ad { color: var(--muted); font-size: 12.5px; word-break: break-all; }
   .copy-ic { cursor: pointer; color: var(--muted-2); margin-left: 6px; display: inline-flex; vertical-align: middle; }
   .copy-ic:hover { color: var(--accent); }
+  .edit-ic { cursor: pointer; color: var(--muted-2); margin-left: 6px; display: inline-flex; vertical-align: middle; }
+  .edit-ic:hover { color: var(--accent); }
   .det-head .total { text-align: right; }
   .det-head .total .big { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
   .det-head .total .sub { font-size: 12px; color: var(--muted); }
@@ -356,6 +358,32 @@ function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.
 const COPY_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 function copyBtn(text){ return `<span class="copy-ic" title="复制地址" onclick="copyText('${text}',event)">${COPY_SVG}</span>`; }
 const TRASH_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>';
+const EDIT_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+// 地址自定义名称（本地保存；已跟踪的会同步到数据库标签）
+let customNames = {};
+try{ customNames = JSON.parse(localStorage.getItem("wt_names")||"{}") || {}; }catch(e){ customNames = {}; }
+function saveNames(){ try{ localStorage.setItem("wt_names", JSON.stringify(customNames)); }catch(e){} }
+async function renameWallet(id){
+  const w = walletList.find(x=>x.id===id); if(!w){ toast("未找到该钱包"); return; }
+  const name = prompt("为该地址设置名称（留空清除）：", w.label||"");
+  if(name===null) return;
+  const label = name.trim();
+  try{
+    await api("/api/wallets/"+id, {method:"PATCH", body:JSON.stringify({label})});
+    const k=(w.address||'').toLowerCase(); if(label) customNames[k]=label; else delete customNames[k]; saveNames();
+    toast("已重命名"); await loadWallets();
+  }catch(e){ toast(e.message); }
+}
+async function lbRename(addr){
+  const key=(addr||'').toLowerCase();
+  const name = prompt("为该地址设置名称（留空清除）：", customNames[key]||"");
+  if(name===null) return;
+  const label = name.trim();
+  if(label) customNames[key]=label; else delete customNames[key]; saveNames();
+  const w = walletList.find(x=>(x.address||'').toLowerCase()===key);  // 已跟踪则同步数据库标签
+  if(w){ try{ await api("/api/wallets/"+w.id,{method:"PATCH",body:JSON.stringify({label})}); await loadWallets(); }catch(e){} }
+  renderLeaderboard(); toast("已重命名");
+}
 function copyText(t, ev){ if(ev) ev.stopPropagation();
   const done=()=>toast("已复制地址");
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done));
@@ -419,7 +447,8 @@ async function loadWallets(){
     return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
       ${EVM_CHAINS.includes(w.chain)?`<input type="checkbox" class="wsel" title="选入多钱包分析" data-addr="${w.address}" onclick="event.stopPropagation();toggleAnalysis('${w.address}',this.checked)" ${analysisSet.has(w.address)?'checked':''}>`:''}
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
-      <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span></div>
+      <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span>
+        <span class="edit-ic" title="重命名" onclick="event.stopPropagation();renameWallet(${w.id})">${EDIT_SVG}</span></div>
         <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
       <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
       <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
@@ -1084,11 +1113,11 @@ function renderLeaderboard(){
   if(!view.length){ document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th><th>交易者</th>${head}</tr></thead><tbody><tr><td colspan="8" class="note">无符合筛选的记录（当前 ${lbRows.length} 条里按盈亏正负筛选后为空）</td></tr></tbody></table>`; updateLbCount(); return; }
   const rows=view.map((r,i)=>{
     const tracked=trackedAddrs.has((r.address||'').toLowerCase());
-    const nm=r.display_name||shortAddr(r.address||'',8,6);
+    const nm=customNames[(r.address||'').toLowerCase()]||r.display_name||shortAddr(r.address||'',8,6);
     return `<tr>
       <td>${i+1}</td>
       <td><input type="checkbox" ${tracked?'disabled':''} ${lbSel.has(r.address)?'checked':''} onchange="lbToggle('${r.address}',this.checked)"></td>
-      <td><b>${esc(nm)}</b><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?` · <span class="lb-untrack" onclick="lbUntrack('${r.address}')">取消跟踪</span>`:''}</div></td>
+      <td><b>${esc(nm)}</b> <span class="edit-ic" title="重命名" onclick="lbRename('${r.address}')">${EDIT_SVG}</span><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?` · <span class="lb-untrack" onclick="lbUntrack('${r.address}')">取消跟踪</span>`:''}</div></td>
       <td class="amt-cell">${usd(r.account_value)}</td>
       ${lbPnlCell(r.day)}${lbPnlCell(r.week)}${lbPnlCell(r.month)}${lbPnlCell(r.allTime)}</tr>`;
   }).join("");
@@ -1108,7 +1137,7 @@ function updateLbCount(){ document.getElementById("lbCount").textContent = lbSel
 async function importSelected(){
   if(!lbSel.size) return toast("请先勾选地址");
   const byAddr={}; lbRows.forEach(r=>byAddr[r.address]=r);
-  const items=[...lbSel].map(a=>({address:a, label:(byAddr[a]&&byAddr[a].display_name)||("HL "+shortAddr(a,4,4))}));
+  const items=[...lbSel].map(a=>({address:a, label:customNames[(a||'').toLowerCase()]||(byAddr[a]&&byAddr[a].display_name)||("HL "+shortAddr(a,4,4))}));
   try{ const r=await api("/api/wallets/batch",{method:"POST",body:JSON.stringify({chain:"eth",items})});
     toast(`已导入 ${r.added} 个${r.skipped?`，跳过 ${r.skipped} 个已存在`:""}${r.invalid?`，${r.invalid} 个无效`:""}`);
     closeLeaderboard(); await loadWallets();

@@ -136,6 +136,23 @@ class WalletDB:
             ).fetchall()
             return [self._row(r) for r in rows]
 
+    def set_label(self, wallet_id: int, label: str) -> Optional[Wallet]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM wallets WHERE id=?", (wallet_id,)
+            ).fetchone()
+            if not row:
+                return None
+            self._conn.execute(
+                "UPDATE wallets SET label=? WHERE id=?", (label, wallet_id)
+            )
+            self._conn.commit()
+            return self._row(
+                self._conn.execute(
+                    "SELECT * FROM wallets WHERE id=?", (wallet_id,)
+                ).fetchone()
+            )
+
     def set_cursor(self, wallet_id: int, cursor: str) -> None:
         with self._lock:
             self._conn.execute(
