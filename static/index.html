@@ -977,7 +977,7 @@ function anApplyTable(){
       <td>${c.long_avg!=null?price(c.long_avg):'—'}</td>
       <td>${c.short_wallets?`<span class="neg">${c.short_wallets} 个 · ${usd(c.short_notional)}</span>`:'—'}</td>
       <td>${c.short_avg!=null?price(c.short_avg):'—'}</td>
-      <td class="${c.net_notional>=0?'pos':'neg'}">${c.net_notional>=0?'净多 ':'净空 '}${usd(Math.abs(c.net_notional))}</td>
+      <td><span class="badge ${c.net_notional>=0?'b-open-long':'b-open-short'}">${c.net_notional>=0?'净多':'净空'}</span> <span style="color:var(--text)">${usd(Math.abs(c.net_notional))}</span></td>
       <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`;
   }).join("");
   const tbody = rows || `<tr><td colspan="9" class="note">无符合筛选的记录</td></tr>`;
@@ -989,8 +989,8 @@ function anApplyTable(){
     <th>多头均价 ${ss('longA')}</th>
     <th>空头(钱包·名义) ${ss('shortN')}</th>
     <th>空头均价 ${ss('shortA')}</th>
-    <th>净方向 ${ss('net')}</th>
-    <th>合计浮盈 ${ss('upnl')}</th>
+    <th title="净敞口 = 多头名义 − 空头名义，只表示方向和规模，不是盈亏">净方向 ${ss('net')}</th>
+    <th title="这些钱包在该币未平仓持仓的浮动盈亏合计（多空一起算），绿=赚 红=亏">合计浮盈 ${ss('upnl')}</th>
     </tr></thead><tbody>${tbody}</tbody></table>`;
   const btn=document.getElementById("anCoinBtn"); if(btn) btn.textContent=`多选筛选${anCoins.size?` · ${anCoins.size}`:''} ▾`;
   syncListHeight();
