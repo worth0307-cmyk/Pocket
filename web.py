@@ -269,8 +269,10 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         addrs = [a.strip() for a in body.addresses[:50] if _ADDR_RE.match(a.strip())]
         if not addrs:
             raise HTTPException(status_code=400, detail="没有有效的 EVM/HL 地址")
+        # with_fills=True so builder-deployed perps (股票/商品，HIP-3 子交易所，
+        # 形如 dex:GOLD) also get discovered and counted, not just main crypto.
         states = await asyncio.gather(
-            *[hl.hyperliquid_state(app.state.http, a) for a in addrs],
+            *[hl.hyperliquid_state(app.state.http, a, with_fills=True) for a in addrs],
             return_exceptions=True,
         )
 

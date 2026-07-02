@@ -153,6 +153,10 @@
   .an-filter { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--border); }
   .an-fl { display: flex; align-items: center; gap: 8px; }
   .an-fl-k { font-size: 12px; color: var(--muted); font-weight: 700; }
+  .an-cats { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip-c { cursor: pointer; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 999px; background: #f1f2f5; color: var(--muted); border: 1px solid transparent; }
+  .chip-c:hover { color: var(--accent); }
+  .chip-c.on { background: var(--accent-soft); color: var(--accent); border-color: #ffd9cc; }
   .th-multi { position: relative; display: inline-block; }
   .th-btn { display: inline-block; font-size: 12px; font-weight: 700; color: var(--muted); background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; user-select: none; }
   .th-btn:hover { color: var(--accent); border-color: var(--accent-2); }
@@ -255,22 +259,25 @@ let analysisSet = new Set();  // 多选做持仓方向分析的地址
 let walletList = [];          // 当前跟踪清单（供全选/导出/清理复用）
 let inAnalysis = false, analysisData = null;                          // 分析模块视图状态
 let anBias = "", anSort = "", anDir = "desc";                         // 分析表格方向筛选/排序
-let anCoins = new Set(), anMenuOpen = false;                          // 分析币种多选筛选
+let anCat = "", anCoins = new Set(), anMenuOpen = false;              // 分析分类筛选 + 币种多选
 
-// 币种归类：主流币(加密) / 股票代币 / 期货代币。
-// HL 主永续=加密(无前缀)；股票/商品多为 builder 子交易所(dex:SYM 带冒号前缀)。
-// 商品(期货)是有限集合，用清单精确匹配；带冒号但非商品的一律按股票归类，
-// 这样点「股票代币」能把未收录的个股也自动勾上，点「期货代币」只勾商品。
-const FUTURES_SYMS = new Set(["GOLD","XAU","XAUUSD","SILVER","XAG","XAGUSD","PLATINUM","XPT","PALLADIUM","XPD","COPPER","HG","OIL","CRUDE","WTI","USOIL","BRENT","BRENTOIL","UKOIL","NATGAS","NGAS","NG","GAS","GASOLINE","HEATINGOIL","CORN","WHEAT","SOYBEAN","SOYBEANS","SOYOIL","SUGAR","COFFEE","COCOA","COTTON","LUMBER","CATTLE","HOGS","RICE","OATS","ALUMINUM","ALU","ZINC","NICKEL","IRON","PLATINUMUSD"]);
-const STOCK_SYMS = new Set(["AAPL","TSLA","NVDA","MSFT","GOOGL","GOOG","AMZN","META","NFLX","AMD","INTC","COIN","MSTR","HOOD","PLTR","SPY","QQQ","IWM","DIA","SPX","NDX","GME","AMC","NKE","DIS","BABA","PYPL","SQ","BLOCK","UBER","LYFT","ABNB","SHOP","SNAP","BAC","JPM","WFC","C","GS","MS","V","MA","WMT","COST","KO","PEP","MCD","SBUX","BA","CAT","GE","CRM","ORCL","ADBE","AVGO","MU","QCOM","TXN","ARM","SMCI","TSM","ASML","NIO","XPEV","LI","RIVN","LCID","SOFI","DKNG","RBLX","U","NET","DDOG","SNOW","CRWD","PANW","ZS","MRNA","PFE","JNJ","XOM","CVX","T","VZ","F","GM","BRK","BRKB","LLY","UNH","HD","ABBV","MRK","ADP","NOW","INTU","AMAT","LRCX","MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV"]);
-const CAT_CN = {major:"主流币", stock:"股票代币", futures:"期货代币"};
+// 币种归类：加密 / 股票 / 期货 / 其它。
+// HL 主永续全是加密(无冒号前缀)；股票/商品/其它多为 builder 子交易所(dex:SYM)。
+// 判定：无冒号=加密；带冒号再按 期货(商品清单)→股票(个股清单)→加密(币种清单)→其它。
+const FUTURES_SYMS = new Set(["GOLD","XAU","XAUUSD","SILVER","XAG","XAGUSD","PLATINUM","XPT","PALLADIUM","XPD","COPPER","HG","OIL","CRUDE","WTI","USOIL","BRENT","BRENTOIL","UKOIL","NATGAS","NGAS","NG","GAS","GASOLINE","HEATINGOIL","CORN","WHEAT","SOYBEAN","SOYBEANS","SOYOIL","SUGAR","COFFEE","COCOA","COTTON","LUMBER","CATTLE","HOGS","RICE","OATS","ALUMINUM","ALU","ZINC","NICKEL","IRON","URANIUM","URA"]);
+const STOCK_SYMS = new Set(["AAPL","TSLA","NVDA","MSFT","GOOGL","GOOG","AMZN","META","NFLX","AMD","INTC","COIN","MSTR","HOOD","PLTR","SPY","QQQ","IWM","DIA","SPX","NDX","VOO","GME","AMC","NKE","DIS","BABA","PYPL","SQ","BLOCK","UBER","LYFT","ABNB","SHOP","SNAP","BAC","JPM","WFC","C","GS","MS","V","MA","WMT","COST","KO","PEP","MCD","SBUX","BA","CAT","GE","CRM","ORCL","ADBE","AVGO","MU","QCOM","TXN","ARM","SMCI","TSM","ASML","NIO","XPEV","LI","RIVN","LCID","SOFI","DKNG","RBLX","U","NET","DDOG","SNOW","CRWD","PANW","ZS","MRNA","PFE","JNJ","XOM","CVX","T","VZ","F","GM","BRK","BRKB","LLY","UNH","HD","ABBV","MRK","ADP","NOW","INTU","AMAT","LRCX","MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV","GLXY","BMNR"]);
+// 少量可能出现在 builder 子交易所(带冒号)的加密币种，仍归加密
+const CRYPTO_SYMS = new Set(["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","LTC","BCH","DOT","MATIC","TRX","TON","SUI","APT","ARB","OP","HYPE","PEPE","SHIB","BONK","WIF","WLD","JUP","JTO","PYTH","TIA","SEI","INJ","AAVE","UNI","XMR","LIT","ENA","ONDO","FARTCOIN","kPEPE","kBONK","kSHIB"]);
+const CAT_CN = {crypto:"加密", stock:"股票", futures:"期货", other:"其它"};
+const CATS = ["crypto","stock","futures","other"];
 function coinBase(c){ const s=String(c||""); const i=s.lastIndexOf(":"); return (i>=0?s.slice(i+1):s).toUpperCase(); }
 function coinCat(c){
   const s=String(c||""), b=coinBase(c);
-  if(FUTURES_SYMS.has(b)) return "futures";   // 商品/期货：精确清单
-  if(STOCK_SYMS.has(b)) return "stock";        // 已知个股/ETF
-  if(s.includes(":")) return "stock";          // 其它 builder 上市标的默认按股票
-  return "major";                              // 无前缀=加密主流币
+  if(!s.includes(":")) return "crypto";        // 主永续无前缀，全是加密
+  if(FUTURES_SYMS.has(b)) return "futures";    // 商品/期货
+  if(STOCK_SYMS.has(b)) return "stock";        // 个股/ETF/指数
+  if(CRYPTO_SYMS.has(b)) return "crypto";      // builder 上的加密
+  return "other";                              // 其余一律其它
 }
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
@@ -873,7 +880,7 @@ function closeAnalysis(){
 }
 async function analyzeSelected(){
   if(!analysisSet.size) return toast("请先勾选钱包（卡片左侧勾选框）");
-  inAnalysis=true; analysisData=null; anCoins=new Set(); anMenuOpen=false; anBias=""; anSort=""; anDir="desc"; stopTimer();
+  inAnalysis=true; analysisData=null; anCat=""; anCoins=new Set(); anMenuOpen=false; anBias=""; anSort=""; anDir="desc"; stopTimer();
   document.querySelectorAll('.wcard').forEach(el=>el.classList.remove('active'));
   document.getElementById("detail").innerHTML=anHeadHTML(`已选 ${analysisSet.size} 个钱包`)+'<div class="spinner">分析中…（读取各钱包 Hyperliquid 持仓）</div>';
   syncListHeight();
@@ -883,10 +890,11 @@ async function analyzeSelected(){
   }catch(e){ if(inAnalysis){ document.getElementById("detail").innerHTML=anHeadHTML("")+`<div class="note">分析失败：${esc(e.message)}</div>`; syncListHeight(); } }
 }
 function anCoinList(){ return [...new Set(((analysisData&&analysisData.coins)||[]).map(c=>c.coin))]; }
+function anVisibleCoins(){ return anCoinList().filter(c=>!anCat||coinCat(c)===anCat); }  // 受分类约束
+function setAnCat(v){ anCat=v; anCoins=new Set(); renderAnalysisPanel(); }  // 切分类清空币种多选，避免跨类矛盾
 function anToggleMenu(e){ if(e) e.stopPropagation(); anMenuOpen=!anMenuOpen; renderAnalysisPanel(); }
 function anToggleCoin(c,on){ if(on) anCoins.add(c); else anCoins.delete(c); anApplyTable(); }
-function anPickCat(cat){ anCoins=new Set(anCoinList().filter(c=>coinCat(c)===cat)); anMenuOpen=true; renderAnalysisPanel(); }
-function anSelectAllCoins(){ anCoins=new Set(anCoinList()); anMenuOpen=true; renderAnalysisPanel(); }
+function anSelectAllCoins(){ anCoins=new Set(anVisibleCoins()); anMenuOpen=true; renderAnalysisPanel(); }
 function anClearCoins(){ anCoins=new Set(); anMenuOpen=true; renderAnalysisPanel(); }
 function setAnBias(v){ anBias=v; anApplyTable(); }
 function setAnSort(k){ if(anSort===k){ anDir = anDir==="desc"?"asc":"desc"; } else { anSort=k; anDir="desc"; } anApplyTable(); }
@@ -898,22 +906,23 @@ function renderAnalysisPanel(){
     <div class="stat"><div class="k">合计 HL 资产</div><div class="v">${usd(d.total_account_value)}</div></div>
     <div class="stat"><div class="k">合计浮动盈亏</div><div class="v ${d.total_upnl>=0?'pos':'neg'}">${(d.total_upnl>=0?'+':'')+usd(d.total_upnl)}</div></div></div>`;
   if(!d.coins||!d.coins.length){ document.getElementById("detail").innerHTML=head+`<div class="note">所选钱包在 Hyperliquid 上没有可分析的持仓。</div>`; syncListHeight(); return; }
-  // 币种多选菜单：按 主流币/股票代币/期货代币 分组，支持整组快选
-  const groups={major:[],stock:[],futures:[]}; anCoinList().forEach(c=>groups[coinCat(c)].push(c));
+  // 分类计数
+  const catCount={crypto:0,stock:0,futures:0,other:0}; anCoinList().forEach(c=>catCount[coinCat(c)]++);
+  const catChip=(v,label,n)=>`<span class="chip-c ${anCat===v?'on':''}" onclick="setAnCat('${v}')">${label}${n!=null?` ${n}`:''}</span>`;
+  const catRow=`<span class="an-cats">${catChip('','全部',anCoinList().length)}${catChip('crypto','加密',catCount.crypto)}${catChip('stock','股票',catCount.stock)}${catChip('futures','期货',catCount.futures)}${catChip('other','其它',catCount.other)}</span>`;
+  // 币种多选菜单：仅列出当前分类下的币种，按四类分组
   let menu="";
   if(anMenuOpen){
-    const cats=`<div class="cat-row">
-      <span onclick="anPickCat('major')">主流币</span>
-      <span onclick="anPickCat('stock')">股票代币</span>
-      <span onclick="anPickCat('futures')">期货代币</span>
-      <span onclick="anSelectAllCoins()">全选</span>
-      <span onclick="anClearCoins()">清空</span></div>`;
+    const groups={crypto:[],stock:[],futures:[],other:[]}; anVisibleCoins().forEach(c=>groups[coinCat(c)].push(c));
+    const tools=`<div class="cat-row"><span onclick="anSelectAllCoins()">全选</span><span onclick="anClearCoins()">清空</span></div>`;
     const grp=(key)=>groups[key].length?`<div class="mg">${CAT_CN[key]}</div>`+groups[key].map(c=>
       `<label><input type="checkbox" value="${esc(c)}" ${anCoins.has(c)?'checked':''} onchange="anToggleCoin(this.value,this.checked)"><span>${esc(c)}</span></label>`).join(""):"";
-    menu=`<div class="th-menu" id="anCoinMenu">${cats}${grp('major')}${grp('stock')}${grp('futures')}</div>`;
+    const bodyHtml=CATS.map(grp).join("")||`<div class="mg" style="color:var(--muted-2)">该分类下无持仓</div>`;
+    menu=`<div class="th-menu" id="anCoinMenu">${tools}${bodyHtml}</div>`;
   }
   const biases=[...new Set(d.coins.map(c=>c.bias))];
   const bar=`<div class="an-filter">
+    <div class="an-fl"><span class="an-fl-k">分类</span>${catRow}</div>
     <div class="an-fl"><span class="an-fl-k">币种</span>
       <div class="th-multi"><span class="th-btn" id="anCoinBtn" onclick="anToggleMenu(event)">多选筛选${anCoins.size?` · ${anCoins.size}`:''} ▾</span>${menu}</div></div>
     <div class="an-fl"><span class="an-fl-k">方向共识</span>
@@ -925,6 +934,7 @@ function renderAnalysisPanel(){
 function anApplyTable(){
   const d=analysisData; if(!d) return; const wrap=document.getElementById("anTableWrap"); if(!wrap) return;
   let list=d.coins.slice();
+  if(anCat) list=list.filter(c=>coinCat(c.coin)===anCat);
   if(anCoins.size) list=list.filter(c=>anCoins.has(c.coin));
   if(anBias) list=list.filter(c=>c.bias===anBias);
   if(anSort){ const kf={cur:c=>c.cur_price||0, longN:c=>c.long_notional||0, longA:c=>c.long_avg||0, shortN:c=>c.short_notional||0, shortA:c=>c.short_avg||0, net:c=>c.net_notional||0, upnl:c=>c.upnl||0}[anSort];
