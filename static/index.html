@@ -197,12 +197,12 @@
           <span style="display:flex;gap:8px">
             <button class="an-btn" id="analyzeBtn" onclick="analyzeSelected()" style="display:none"></button>
           </span></div>
-        <div class="list-tools" id="listTools" style="display:none">
-          <button class="tool-btn" id="selAllBtn" onclick="toggleSelectAll()">全选</button>
+        <div class="list-tools" id="listTools">
+          <button class="tool-btn need-wallets" id="selAllBtn" onclick="toggleSelectAll()">全选</button>
           <button class="tool-btn" onclick="triggerImport()">导入</button>
-          <button class="tool-btn" onclick="exportWallets()">导出</button>
-          <button class="tool-btn danger" onclick="purgeInactive()" title="移除没有任何买卖/动作记录的地址">清理无记录</button>
-          <button class="tool-btn danger" id="clearBtn" onclick="clearAllWallets()">清空</button>
+          <button class="tool-btn need-wallets" onclick="exportWallets()">导出</button>
+          <button class="tool-btn danger need-wallets" onclick="purgeInactive()" title="移除没有任何买卖/动作记录的地址">清理无记录</button>
+          <button class="tool-btn danger need-wallets" id="clearBtn" onclick="clearAllWallets()">清空</button>
           <input type="file" id="importFile" accept=".json,.txt,.csv" style="display:none" onchange="importWallets(this)">
         </div>
         <div id="walletList"><div class="spinner">加载中…</div></div>
@@ -326,7 +326,8 @@ async function loadWallets(){
   trackedAddrs=new Set(d.wallets.map(w=>(w.address||'').toLowerCase()));
   analysisSet=new Set([...analysisSet].filter(a=>trackedAddrs.has((a||'').toLowerCase())));
   document.getElementById("wcount").textContent = d.wallets.length?"("+d.wallets.length+")":"";
-  document.getElementById("listTools").style.display = d.wallets.length?"flex":"none";
+  // 工具条始终显示（至少保留「导入」），仅隐藏需要钱包才有意义的按钮，避免清空后按钮全消失
+  document.querySelectorAll(".need-wallets").forEach(b=>{ b.style.display = d.wallets.length?"":"none"; });
   updateSelUI();
   const list=document.getElementById("walletList");
   if(!d.wallets.length){ list.innerHTML='<div class="empty" style="border-style:dashed">还没有跟踪任何钱包<br><span style="font-size:12px;color:var(--muted-2)">上方粘贴地址后点「+ 跟踪」</span></div>'; return; }
@@ -902,7 +903,7 @@ function anApplyTable(){
   let list=d.coins.slice();
   if(anCoins.size) list=list.filter(c=>anCoins.has(c.coin));
   if(anBias) list=list.filter(c=>c.bias===anBias);
-  if(anSort){ const kf={longN:c=>c.long_notional||0, longA:c=>c.long_avg||0, shortN:c=>c.short_notional||0, shortA:c=>c.short_avg||0, net:c=>c.net_notional||0, upnl:c=>c.upnl||0}[anSort];
+  if(anSort){ const kf={cur:c=>c.cur_price||0, longN:c=>c.long_notional||0, longA:c=>c.long_avg||0, shortN:c=>c.short_notional||0, shortA:c=>c.short_avg||0, net:c=>c.net_notional||0, upnl:c=>c.upnl||0}[anSort];
     if(kf) list.sort((a,b)=>{ const av=kf(a), bv=kf(b); return anDir==="desc"?bv-av:av-bv; }); }
   const ss=(k)=>`<span class="th-sort ${anSort===k?'on':''}" onclick="setAnSort('${k}')">${anSort===k?(anDir==='desc'?'↓':'↑'):'⇅'}</span>`;
   const rows=list.map(c=>{
@@ -910,6 +911,7 @@ function anApplyTable(){
     return `<tr>
       <td><b>${esc(c.coin)}</b></td>
       <td><span class="badge ${badge}">${esc(c.bias)}</span></td>
+      <td>${c.cur_price!=null?price(c.cur_price):'—'}</td>
       <td>${c.long_wallets?`<span class="pos">${c.long_wallets} 个 · ${usd(c.long_notional)}</span>`:'—'}</td>
       <td>${c.long_avg!=null?price(c.long_avg):'—'}</td>
       <td>${c.short_wallets?`<span class="neg">${c.short_wallets} 个 · ${usd(c.short_notional)}</span>`:'—'}</td>
@@ -917,10 +919,11 @@ function anApplyTable(){
       <td class="${c.net_notional>=0?'pos':'neg'}">${c.net_notional>=0?'净多 ':'净空 '}${usd(Math.abs(c.net_notional))}</td>
       <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`;
   }).join("");
-  const tbody = rows || `<tr><td colspan="8" class="note">无符合筛选的记录</td></tr>`;
+  const tbody = rows || `<tr><td colspan="9" class="note">无符合筛选的记录</td></tr>`;
   wrap.innerHTML=`<table><thead><tr>
     <th>币种</th>
     <th>方向共识</th>
+    <th>现价 ${ss('cur')}</th>
     <th>多头(钱包·名义) ${ss('longN')}</th>
     <th>多头均价 ${ss('longA')}</th>
     <th>空头(钱包·名义) ${ss('shortN')}</th>

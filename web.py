@@ -278,12 +278,17 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             return {"n": 0, "notional": 0.0, "size": 0.0, "sxe": 0.0, "upnl": 0.0}
 
         coins: dict = {}
+        price_by_coin: dict = {}   # 现价：优先用持仓的标记价(仓位价值/数量)
+        mids_all: dict = {}        # 盘口中间价兜底
         total_acct = total_upnl = 0.0
         with_pos = 0
         for st in states:
             if not isinstance(st, dict):
                 continue
             total_acct += st.get("account_value", 0) or 0
+            for k, v in (st.get("mids") or {}).items():
+                if v:
+                    mids_all[k] = v
             positions = st.get("positions") or []
             if positions:
                 with_pos += 1
@@ -292,8 +297,11 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 g = coins.setdefault(c, {"long": leg(), "short": leg()})
                 lg = g["long"] if p.get("side") == "多" else g["short"]
                 sz = abs(p.get("size") or 0)
+                val = abs(p.get("value_usd") or 0)
+                if c not in price_by_coin and sz and val:
+                    price_by_coin[c] = val / sz  # 标记价 = 仓位价值 / 仓位数量
                 lg["n"] += 1
-                lg["notional"] += abs(p.get("value_usd") or 0)
+                lg["notional"] += val
                 lg["size"] += sz
                 if p.get("entry_px"):
                     lg["sxe"] += p["entry_px"] * sz
@@ -306,6 +314,7 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             L, S = g["long"], g["short"]
             out.append({
                 "coin": c,
+                "cur_price": price_by_coin.get(c) or mids_all.get(c) or None,
                 "long_wallets": L["n"], "long_notional": L["notional"],
                 "long_avg": (L["sxe"] / L["size"]) if L["size"] else None,
                 "short_wallets": S["n"], "short_notional": S["notional"],
