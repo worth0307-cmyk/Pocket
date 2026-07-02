@@ -1079,10 +1079,14 @@ const LB_COLS=[["value","账户价值"],["day","日盈亏"],["week","周盈亏"]
 function lbSetSort(k){ if(lbSort===k){ lbDir = lbDir==="desc"?"asc":"desc"; } else { lbSort=k; lbDir="desc"; } loadLeaderboard(); }
 async function loadLeaderboard(){
   const lim=document.getElementById("lbLimit").value;
-  const body=document.getElementById("lbBody"); body.innerHTML='<div class="spinner">加载排行榜…</div>';
+  const body=document.getElementById("lbBody");
+  if(!lbRows.length) body.innerHTML='<div class="spinner">加载排行榜…</div>';  // 已有旧数据就不清屏
   lbSel.clear(); document.getElementById("lbAll").checked=false; updateLbCount();
   try{ const d=await api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=${lim}`); lbRows=d.rows||[]; renderLeaderboard(); }
-  catch(e){ body.innerHTML=`<div class="note">加载失败：${esc(e.message)}（需能访问 Hyperliquid）</div>`; }
+  catch(e){
+    if(lbRows.length){ renderLeaderboard(); toast("刷新排行榜失败，仍显示上次数据"); }  // 有旧数据就保留
+    else body.innerHTML=`<div class="note">加载失败：${esc(e.message)}（需能访问 Hyperliquid）<br><button class="btn-ghost" style="margin-top:10px;height:34px" onclick="loadLeaderboard()">重试</button></div>`;
+  }
 }
 function lbPnlCell(w){ if(!w) return '<td>—</td>'; return `<td class="amt-cell ${w.pnl>=0?'pos':'neg'}">${(w.pnl>=0?'+':'')+usd(w.pnl)}<div style="font-weight:500;font-size:11px;color:var(--muted)">ROI ${(w.roi>=0?'+':'')+(w.roi*100).toFixed(1)}%</div></td>`; }
 const LB_SIGN_COLS = new Set(["day","week","month"]);  // 可按正负筛选的窗口

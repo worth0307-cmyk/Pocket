@@ -65,12 +65,24 @@ async def _leaderboard_rows(http: httpx.AsyncClient) -> list:
     now = time.time()
     if _lb_cache["rows"] is not None and now - _lb_cache["ts"] < _LB_TTL:
         return _lb_cache["rows"]
-    try:
-        resp = await http.get(HL_LEADERBOARD, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ChainError(f"hyperliquid leaderboard failed: {exc}") from exc
+    # 榜单 JSON 较大，境内访问 stats-data.hyperliquid.xyz 偶发超时/断连，
+    # 重试几次；仍失败时，若有旧缓存就返回旧数据，避免直接报错。
+    data = None
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            resp = await http.get(HL_LEADERBOARD, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except (httpx.HTTPError, ValueError) as exc:
+            last_exc = exc
+            if attempt < 2:
+                await asyncio.sleep(0.8 * (attempt + 1))
+    if data is None:
+        if _lb_cache["rows"] is not None:
+            return _lb_cache["rows"]  # 服务旧缓存，好过报错
+        raise ChainError(f"hyperliquid leaderboard failed: {last_exc}")
     out = []
     for r in data.get("leaderboardRows", []) or []:
         perf = dict(r.get("windowPerformances") or [])
