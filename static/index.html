@@ -168,6 +168,8 @@
   .th-menu label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 3px 4px; cursor: pointer; border-radius: 6px; white-space: nowrap; }
   .th-menu label:hover { background: var(--bg); }
   .th-menu label input { accent-color: var(--accent); }
+  .lb-untrack { color: var(--red); cursor: pointer; font-weight: 700; }
+  .lb-untrack:hover { text-decoration: underline; }
   .lb-close { cursor: pointer; color: var(--muted); font-size: 18px; padding: 0 4px; }
   .lb-close:hover { color: var(--red); }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
@@ -255,6 +257,7 @@ let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重
 let detailCache = {}; // 详情数据快照，切换回最近看过的钱包时秒开
 function detailKey(s){ return s ? s.chain+":"+s.address+":"+s.category : ""; }
 let trackedAddrs = new Set(), lbRows = [], lbSel = new Set(), lbSort = "week", lbDir = "desc";
+let lbSign = {day:"", week:"", month:""};  // 排行榜按 日/周/月 盈亏正负筛选（""=全部 / pos / neg）
 let analysisSet = new Set();  // 多选做持仓方向分析的地址
 let walletList = [];          // 当前跟踪清单（供全选/导出/清理复用）
 let inAnalysis = false, analysisData = null;                          // 分析模块视图状态
@@ -1053,19 +1056,39 @@ async function loadLeaderboard(){
   catch(e){ body.innerHTML=`<div class="note">加载失败：${esc(e.message)}（需能访问 Hyperliquid）</div>`; }
 }
 function lbPnlCell(w){ if(!w) return '<td>—</td>'; return `<td class="amt-cell ${w.pnl>=0?'pos':'neg'}">${(w.pnl>=0?'+':'')+usd(w.pnl)}<div style="font-weight:500;font-size:11px;color:var(--muted)">ROI ${(w.roi>=0?'+':'')+(w.roi*100).toFixed(1)}%</div></td>`; }
+const LB_SIGN_COLS = new Set(["day","week","month"]);  // 可按正负筛选的窗口
+function lbSetSign(k,v){ lbSign[k]=v; renderLeaderboard(); }
+function lbVisibleRows(){
+  return lbRows.filter(r=>{
+    for(const k of ["day","week","month"]){
+      if(!lbSign[k]) continue;
+      const p = r[k] ? r[k].pnl : 0;
+      if(lbSign[k]==="pos" && !(p>0)) return false;
+      if(lbSign[k]==="neg" && !(p<0)) return false;
+    }
+    return true;
+  });
+}
 function renderLeaderboard(){
   if(!lbRows.length){ document.getElementById("lbBody").innerHTML='<div class="note">暂无数据（需能访问 Hyperliquid）</div>'; return; }
   const head=LB_COLS.map(([k,label])=>{
     const arrow = lbSort===k ? (lbDir==="desc"?"↓":"↑") : "⇅";
-    return `<th class="lb-h ${lbSort===k?'on':''}" onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span></th>`;
+    let filter="";
+    if(LB_SIGN_COLS.has(k)){
+      filter=`<select class="th-filter" onclick="event.stopPropagation()" onchange="event.stopPropagation();lbSetSign('${k}',this.value)">
+        <option value="">全部</option><option value="pos" ${lbSign[k]==='pos'?'selected':''}>盈利</option><option value="neg" ${lbSign[k]==='neg'?'selected':''}>亏损</option></select>`;
+    }
+    return `<th class="lb-h ${lbSort===k?'on':''}" onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span>${filter}</th>`;
   }).join("");
-  const rows=lbRows.map((r,i)=>{
+  const view=lbVisibleRows();
+  if(!view.length){ document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th><th>交易者</th>${head}</tr></thead><tbody><tr><td colspan="8" class="note">无符合筛选的记录（当前 ${lbRows.length} 条里按盈亏正负筛选后为空）</td></tr></tbody></table>`; updateLbCount(); return; }
+  const rows=view.map((r,i)=>{
     const tracked=trackedAddrs.has((r.address||'').toLowerCase());
     const nm=r.display_name||shortAddr(r.address||'',8,6);
     return `<tr>
       <td>${i+1}</td>
       <td><input type="checkbox" ${tracked?'disabled':''} ${lbSel.has(r.address)?'checked':''} onchange="lbToggle('${r.address}',this.checked)"></td>
-      <td><b>${esc(nm)}</b><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?' · 已跟踪':''}</div></td>
+      <td><b>${esc(nm)}</b><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?` · <span class="lb-untrack" onclick="lbUntrack('${r.address}')">取消跟踪</span>`:''}</div></td>
       <td class="amt-cell">${usd(r.account_value)}</td>
       ${lbPnlCell(r.day)}${lbPnlCell(r.week)}${lbPnlCell(r.month)}${lbPnlCell(r.allTime)}</tr>`;
   }).join("");
@@ -1073,7 +1096,14 @@ function renderLeaderboard(){
   updateLbCount();
 }
 function lbToggle(addr,on){ if(on) lbSel.add(addr); else lbSel.delete(addr); updateLbCount(); }
-function lbToggleAll(on){ lbSel.clear(); if(on) lbRows.forEach(r=>{ if(!trackedAddrs.has((r.address||'').toLowerCase())) lbSel.add(r.address); }); renderLeaderboard(); }
+function lbToggleAll(on){ lbSel.clear(); if(on) lbVisibleRows().forEach(r=>{ if(!trackedAddrs.has((r.address||'').toLowerCase())) lbSel.add(r.address); }); renderLeaderboard(); }
+async function lbUntrack(addr){
+  const key=(addr||'').toLowerCase();
+  const ws=walletList.filter(x=>(x.address||'').toLowerCase()===key);
+  if(!ws.length){ toast("未找到该跟踪记录"); return; }
+  try{ for(const w of ws) await api("/api/wallets/"+w.id,{method:"DELETE"}); toast("已取消跟踪"); await loadWallets(); renderLeaderboard(); }
+  catch(e){ toast(e.message); }
+}
 function updateLbCount(){ document.getElementById("lbCount").textContent = lbSel.size?`已选 ${lbSel.size} 个`:""; }
 async function importSelected(){
   if(!lbSel.size) return toast("请先勾选地址");
