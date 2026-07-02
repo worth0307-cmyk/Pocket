@@ -306,6 +306,41 @@ function coinCat(c){
   if(INDEX_RE.test(b)) return "stock";         // 形如 XYZ100/US500 的指数名，归股票
   return "other";                              // 其余暂归其它
 }
+// 币种中文名（按代号，取到才显示，取不到就不显示）。
+const CN_NAMES = {
+  // 加密
+  BTC:"比特币", ETH:"以太坊", SOL:"索拉纳", BNB:"币安币", XRP:"瑞波币", DOGE:"狗狗币", ADA:"艾达币",
+  AVAX:"雪崩", DOT:"波卡", LTC:"莱特币", BCH:"比特币现金", TRX:"波场", TON:"电报币", XMR:"门罗币",
+  SHIB:"柴犬币", PEPE:"佩佩币", WLD:"世界币", UNI:"Uniswap", AAVE:"Aave", LINK:"Chainlink",
+  // 股票
+  AAPL:"苹果", TSLA:"特斯拉", NVDA:"英伟达", MSFT:"微软", GOOGL:"谷歌", GOOG:"谷歌", AMZN:"亚马逊",
+  META:"Meta", NFLX:"奈飞", AMD:"超威半导体", INTC:"英特尔", COIN:"Coinbase", MSTR:"微策略", HOOD:"罗宾汉",
+  PLTR:"Palantir", BABA:"阿里巴巴", NIO:"蔚来", XPEV:"小鹏汽车", LI:"理想汽车", TSM:"台积电", ASML:"阿斯麦",
+  SNDK:"闪迪", MU:"美光科技", QCOM:"高通", AVGO:"博通", ORCL:"甲骨文", CRM:"Salesforce", ADBE:"Adobe",
+  DIS:"迪士尼", NKE:"耐克", KO:"可口可乐", PEP:"百事", MCD:"麦当劳", SBUX:"星巴克", WMT:"沃尔玛", COST:"好市多",
+  JPM:"摩根大通", BAC:"美国银行", GS:"高盛", MS:"摩根士丹利", V:"Visa", MA:"万事达", BA:"波音", PFE:"辉瑞",
+  JNJ:"强生", XOM:"埃克森美孚", CVX:"雪佛龙", F:"福特", GM:"通用汽车", UBER:"优步", SHOP:"Shopify",
+  PYPL:"PayPal", GME:"游戏驿站", AMC:"AMC院线", MRNA:"Moderna", LLY:"礼来", UNH:"联合健康", HD:"家得宝",
+  IBM:"IBM", CSCO:"思科", MARA:"Marathon", RIOT:"Riot", ARM:"Arm", SMCI:"超微电脑", DELL:"戴尔", CRCL:"Circle",
+  // 指数
+  SP500:"标普500", SPX:"标普500", SPX500:"标普500", US500:"标普500", ES:"标普500", SPY:"标普500ETF",
+  NDX:"纳斯达克100", NAS100:"纳斯达克100", US100:"纳斯达克100", USTECH:"纳斯达克100", QQQ:"纳指100ETF",
+  US30:"道琼斯", DJ30:"道琼斯", DJIA:"道琼斯", DJI:"道琼斯", DOW:"道琼斯", DIA:"道指ETF",
+  RUSSELL:"罗素2000", US2000:"罗素2000", RUT:"罗素2000", IWM:"罗素2000ETF", VIX:"波动率指数",
+  GER40:"德国DAX40", DAX:"德国DAX", DAX40:"德国DAX40", DE40:"德国DAX40", UK100:"英国富时100", FTSE:"富时100",
+  FTSE100:"富时100", JP225:"日经225", NIKKEI:"日经225", N225:"日经225", HK50:"恒生指数", HSI:"恒生指数",
+  CHINA50:"富时中国A50", CN50:"富时中国A50", AUS200:"澳洲200", ASX200:"澳洲200", NIFTY:"印度Nifty50",
+  EU50:"欧洲斯托克50", STOXX50:"欧洲斯托克50", CAC40:"法国CAC40",
+  // 商品/期货
+  GOLD:"黄金", XAU:"黄金", GC:"黄金", SILVER:"白银", XAG:"白银", SI:"白银", PLATINUM:"铂金", PL:"铂金",
+  PALLADIUM:"钯金", PA:"钯金", COPPER:"铜", HG:"铜", ALUMINUM:"铝", ZINC:"锌", NICKEL:"镍", LEAD:"铅",
+  TIN:"锡", IRON:"铁矿石", URANIUM:"铀", LITHIUM:"锂", OIL:"原油", CRUDE:"原油", CL:"原油(WTI)", WTI:"原油(WTI)",
+  USOIL:"美国原油", BRENT:"布伦特原油", BRENTOIL:"布伦特原油", UKOIL:"布伦特原油", NATGAS:"天然气", NG:"天然气",
+  GAS:"天然气", GASOLINE:"汽油", RB:"汽油", HEATINGOIL:"取暖油", CORN:"玉米", WHEAT:"小麦", SOYBEAN:"大豆",
+  SOYBEANS:"大豆", SUGAR:"白糖", COFFEE:"咖啡", COCOA:"可可", COTTON:"棉花", RICE:"大米", OATS:"燕麦",
+  CATTLE:"活牛", HOGS:"生猪", LUMBER:"木材", DRAM:"内存(DRAM)", NAND:"闪存",
+};
+function coinCN(c){ return CN_NAMES[coinBase(c)] || ""; }
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
 async function api(path, opts={}){
@@ -682,7 +717,7 @@ function renderTradeSummary(rows){
       ? `<div style="display:flex;align-items:center;gap:6px"><div style="flex:0 0 42px;height:5px;background:#eef0f4;border-radius:3px;overflow:hidden"><div style="width:${Math.min(pct,100)}%;height:100%;background:var(--accent)"></div></div><span style="color:var(--muted);font-size:11px">${pct.toFixed(1)}%</span></div>`
       : '—';
     return `<tr>
-      <td><b>${esc(g.coin)}</b> ${g.venue?`<span class="chip"${g.venue==='HL'?' title="Hyperliquid"':''}>${g.venue==='HL'?'⚡HL':esc(String(g.venue).toUpperCase())}</span>`:''}</td>
+      <td><b>${esc(g.coin)}</b>${coinCN(g.coin)?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(coinCN(g.coin))}</span>`:''} ${g.venue?`<span class="chip"${g.venue==='HL'?' title="Hyperliquid"':''}>${g.venue==='HL'?'⚡HL':esc(String(g.venue).toUpperCase())}</span>`:''}</td>
       <td${(g.buys+g.sells===0 && g.posVal!=null)?' title="持仓建于更早成交，不在近期窗口内"':''}>${g.buys}/${g.sells}</td>
       <td class="${g.net>=0?'pos':'neg'}">${(g.net>=0?'+':'')+fmt(g.net)}</td>
       <td>${price(g.avg)}</td>
@@ -942,8 +977,10 @@ function renderAnalysisPanel(){
   if(anMenuOpen){
     const groups={crypto:[],stock:[],futures:[],other:[]}; anVisibleCoins().forEach(c=>groups[coinCat(c)].push(c));
     const tools=`<div class="cat-row"><span onclick="anSelectAllCoins()">全选</span><span onclick="anClearCoins()">清空</span></div>`;
-    const grp=(key)=>groups[key].length?`<div class="mg">${CAT_CN[key]}</div>`+groups[key].map(c=>
-      `<label><input type="checkbox" value="${esc(c)}" ${anCoins.has(c)?'checked':''} onchange="anToggleCoin(this.value,this.checked)"><span>${esc(c)}</span></label>`).join(""):"";
+    const grp=(key)=>groups[key].length?`<div class="mg">${CAT_CN[key]}</div>`+groups[key].map(c=>{
+      const nm=coinCN(c);
+      return `<label><input type="checkbox" value="${esc(c)}" ${anCoins.has(c)?'checked':''} onchange="anToggleCoin(this.value,this.checked)"><span>${esc(c)}${nm?` <span style="color:var(--muted-2)">${esc(nm)}</span>`:''}</span></label>`;
+    }).join(""):"";
     const bodyHtml=CATS.map(grp).join("")||`<div class="mg" style="color:var(--muted-2)">该分类下无持仓</div>`;
     menu=`<div class="th-menu" id="anCoinMenu">${tools}${bodyHtml}</div>`;
   }
@@ -969,8 +1006,9 @@ function anApplyTable(){
   const ss=(k)=>`<span class="th-sort ${anSort===k?'on':''}" onclick="setAnSort('${k}')">${anSort===k?(anDir==='desc'?'↓':'↑'):'⇅'}</span>`;
   const rows=list.map(c=>{
     const badge=c.bias==='一致做多'?'b-open-long':c.bias==='一致做空'?'b-open-short':'b-SWAP';
+    const cn=coinCN(c.coin);
     return `<tr>
-      <td><b>${esc(c.coin)}</b></td>
+      <td><b>${esc(c.coin)}</b>${cn?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(cn)}</span>`:''}</td>
       <td><span class="badge ${badge}">${esc(c.bias)}</span></td>
       <td>${c.cur_price!=null?price(c.cur_price):'—'}</td>
       <td>${c.long_wallets?`<span class="pos">${c.long_wallets} 个 · ${usd(c.long_notional)}</span>`:'—'}</td>
