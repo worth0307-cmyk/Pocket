@@ -262,22 +262,49 @@ let anBias = "", anSort = "", anDir = "desc";                         // 分析�
 let anCat = "", anCoins = new Set(), anMenuOpen = false;              // 分析分类筛选 + 币种多选
 
 // 币种归类：加密 / 股票 / 期货 / 其它。
-// HL 主永续全是加密(无冒号前缀)；股票/商品/其它多为 builder 子交易所(dex:SYM)。
-// 判定：无冒号=加密；带冒号再按 期货(商品清单)→股票(个股清单)→加密(币种清单)→其它。
-const FUTURES_SYMS = new Set(["GOLD","XAU","XAUUSD","SILVER","XAG","XAGUSD","PLATINUM","XPT","PALLADIUM","XPD","COPPER","HG","OIL","CRUDE","WTI","USOIL","BRENT","BRENTOIL","UKOIL","NATGAS","NGAS","NG","GAS","GASOLINE","HEATINGOIL","CORN","WHEAT","SOYBEAN","SOYBEANS","SOYOIL","SUGAR","COFFEE","COCOA","COTTON","LUMBER","CATTLE","HOGS","RICE","OATS","ALUMINUM","ALU","ZINC","NICKEL","IRON","URANIUM","URA"]);
-const STOCK_SYMS = new Set(["AAPL","TSLA","NVDA","MSFT","GOOGL","GOOG","AMZN","META","NFLX","AMD","INTC","COIN","MSTR","HOOD","PLTR","SPY","QQQ","IWM","DIA","SPX","NDX","VOO","GME","AMC","NKE","DIS","BABA","PYPL","SQ","BLOCK","UBER","LYFT","ABNB","SHOP","SNAP","BAC","JPM","WFC","C","GS","MS","V","MA","WMT","COST","KO","PEP","MCD","SBUX","BA","CAT","GE","CRM","ORCL","ADBE","AVGO","MU","QCOM","TXN","ARM","SMCI","TSM","ASML","NIO","XPEV","LI","RIVN","LCID","SOFI","DKNG","RBLX","U","NET","DDOG","SNOW","CRWD","PANW","ZS","MRNA","PFE","JNJ","XOM","CVX","T","VZ","F","GM","BRK","BRKB","LLY","UNH","HD","ABBV","MRK","ADP","NOW","INTU","AMAT","LRCX","MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV","GLXY","BMNR"]);
-// 少量可能出现在 builder 子交易所(带冒号)的加密币种，仍归加密
+// HL 主永续全是加密(无冒号前缀)；股票/商品/指数多为 builder 子交易所(dex:SYM)。
+// 判定：无冒号=加密；带冒号按 期货(商品/期货代号)→股票(个股/指数)→加密→指数名启发式→其它。
+const FUTURES_SYMS = new Set([
+  // 金属
+  "GOLD","XAU","XAUUSD","GC","SILVER","XAG","XAGUSD","SI","PLATINUM","XPT","PL","PALLADIUM","XPD","PA",
+  "COPPER","HG","ALUMINUM","ALU","ALI","ZINC","NICKEL","LEAD","TIN","IRON","STEEL","URANIUM","URA","LITHIUM","COBALT",
+  // 能源
+  "OIL","CRUDE","CL","WTI","USOIL","XTIUSD","BRENT","BRENTOIL","BRT","UKOIL","XBRUSD","NATGAS","NGAS","NG","XNGUSD",
+  "GAS","GASOLINE","RB","HEATINGOIL","HO","ETHANOL","COAL","CARBON",
+  // 农产品
+  "CORN","ZC","WHEAT","ZW","SOYBEAN","SOYBEANS","ZS","SOYOIL","ZL","SOYMEAL","ZM","SUGAR","SB","COFFEE","KC",
+  "COCOA","CC","COTTON","CT","LUMBER","LBS","CATTLE","LE","HOGS","HE","RICE","ZR","OATS","ZO","ORANGEJUICE","OJ",
+  "MILK","RUBBER","PALMOIL","WOOD",
+  // 其它商品现货
+  "DRAM","NAND","MEMORY"]);
+const STOCK_SYMS = new Set([
+  // 指数(字母名)
+  "SPX","SPX500","SP500","ES","US500","US30","DJ30","DJIA","DJI","DOW","US100","NAS100","NASDAQ","NDX","NQ","USTECH","US2000",
+  "RUSSELL","RUT","RTY","VIX","GER40","DAX","DAX40","DE40","UK100","FTSE","FTSE100","UKX","EU50","STOXX50","SX5E",
+  "FRA40","CAC","CAC40","JP225","NIKKEI","NKY","N225","HK50","HSI","CHINA50","CN50","AUS200","ASX200","NIFTY","IN50",
+  "SPY","QQQ","IWM","DIA","VOO","VTI",
+  // 个股/ADR
+  "AAPL","TSLA","NVDA","MSFT","GOOGL","GOOG","AMZN","META","NFLX","AMD","INTC","COIN","MSTR","HOOD","PLTR","GME","AMC",
+  "NKE","DIS","BABA","PYPL","SQ","BLOCK","UBER","LYFT","ABNB","SHOP","SNAP","BAC","JPM","WFC","C","GS","MS","V","MA",
+  "WMT","COST","KO","PEP","MCD","SBUX","BA","CAT","GE","CRM","ORCL","ADBE","AVGO","MU","QCOM","TXN","ARM","SMCI","TSM",
+  "ASML","NIO","XPEV","LI","RIVN","LCID","SOFI","DKNG","RBLX","U","NET","DDOG","SNOW","CRWD","PANW","ZS","MRNA","PFE",
+  "JNJ","XOM","CVX","T","VZ","F","GM","BRK","BRKB","LLY","UNH","HD","ABBV","MRK","ADP","NOW","INTU","AMAT","LRCX",
+  "MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV","GLXY","BMNR","SNDK","WDC","STX","ROKU","WBD","SPCE","RKLB","JOBY",
+  "SPCX","CRCL2","HIMS","APP","DELL","ORCL","IBM","CSCO","MRVL","ON","WOLF","ENPH","FSLR","PLUG","CHPT","AI","BBAI"]);
+// 可能出现在 builder 子交易所(带冒号)的加密币种，仍归加密
 const CRYPTO_SYMS = new Set(["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","LTC","BCH","DOT","MATIC","TRX","TON","SUI","APT","ARB","OP","HYPE","PEPE","SHIB","BONK","WIF","WLD","JUP","JTO","PYTH","TIA","SEI","INJ","AAVE","UNI","XMR","LIT","ENA","ONDO","FARTCOIN","kPEPE","kBONK","kSHIB"]);
 const CAT_CN = {crypto:"加密", stock:"股票", futures:"期货", other:"其它"};
 const CATS = ["crypto","stock","futures","other"];
+const INDEX_RE = /^[A-Z]{1,4}\d{2,4}$/;  // 指数名启发式：US500 / NAS100 / GER40 / JP225 / XYZ100
 function coinBase(c){ const s=String(c||""); const i=s.lastIndexOf(":"); return (i>=0?s.slice(i+1):s).toUpperCase(); }
 function coinCat(c){
   const s=String(c||""), b=coinBase(c);
   if(!s.includes(":")) return "crypto";        // 主永续无前缀，全是加密
-  if(FUTURES_SYMS.has(b)) return "futures";    // 商品/期货
-  if(STOCK_SYMS.has(b)) return "stock";        // 个股/ETF/指数
+  if(FUTURES_SYMS.has(b)) return "futures";    // 商品/期货代号
+  if(STOCK_SYMS.has(b)) return "stock";        // 个股/指数
   if(CRYPTO_SYMS.has(b)) return "crypto";      // builder 上的加密
-  return "other";                              // 其余一律其它
+  if(INDEX_RE.test(b)) return "stock";         // 形如 XYZ100/US500 的指数名，归股票
+  return "other";                              // 其余暂归其它
 }
 
 function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
