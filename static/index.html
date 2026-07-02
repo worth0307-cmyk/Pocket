@@ -135,10 +135,11 @@
   .spinner { color: var(--muted); padding: 26px; text-align: center; }
   .modal-bg { position: fixed; inset: 0; background: rgba(20,21,26,.45); display: none; align-items: flex-start; justify-content: center; z-index: 100; padding: 40px 16px; }
   .modal-bg.show { display: flex; }
-  .modal { background: #fff; border-radius: 16px; box-shadow: var(--shadow); width: 100%; max-width: 860px; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; }
+  .modal { background: #fff; border-radius: 16px; box-shadow: var(--shadow); width: 100%; max-width: 1180px; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; }
   .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 800; }
   .modal-head .ctrls { display: flex; align-items: center; gap: 8px; font-weight: 400; }
-  .modal-body { overflow-y: auto; }
+  .modal-body { overflow: auto; }
+  .modal-body table { width: 100%; }
   .modal-body th { position: sticky; top: 0; background: #fff; z-index: 1; }
   .modal-foot { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-top: 1px solid var(--border); }
   .lb-h { cursor: pointer; user-select: none; white-space: nowrap; }
