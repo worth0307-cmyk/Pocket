@@ -27,6 +27,13 @@ _MIDS_TTL = 30
 # The leaderboard is a large, slow-changing JSON — cache it for a while.
 _lb_cache: dict = {"rows": None, "ts": 0.0}
 _LB_TTL = 600  # 10 分钟
+
+# Per-address last-known-good fills. HL's userFills for big whales is a large
+# payload that intermittently times out over a flaky (cross-border) link and
+# comes back empty; reuse the last non-empty result so recent trades don't
+# vanish between refreshes/days. In-memory only (cleared on restart).
+_fills_cache: dict = {}
+_FILLS_TTL = 6 * 3600  # 6 小时内用上次成功抓到的成交兜底
 # Windows the Hyperliquid leaderboard actually exposes (no biweekly / quarter).
 LB_WINDOWS = ("day", "week", "month", "allTime")
 
@@ -233,6 +240,22 @@ async def hyperliquid_state(
     if not isinstance(fills, list):
         fills = []
 
+    # 用上次成功抓到的成交兜底：本次为空/失败时，若近 6 小时内抓到过就沿用，
+    # 避免大户成交记录在刷新/隔天之间时有时无。
+    fills_stale = False
+    fills_as_of = 0
+    if with_fills:
+        nowf = time.time()
+        if fills:
+            _fills_cache[address] = {"fills": fills, "ts": nowf}
+            fills_as_of = int(nowf)
+        else:
+            cached = _fills_cache.get(address)
+            if cached and nowf - cached["ts"] < _FILLS_TTL:
+                fills = cached["fills"]
+                fills_stale = True
+                fills_as_of = int(cached["ts"])
+
     # Builder-deployed perps (HIP-3): coin looks like "xyz:GOLD". The main
     # clearinghouse omits them, so query each sub-dex seen in the fills (parallel).
     dexes = {c.split(":")[0] for f in fills if ":" in (c := f.get("token_symbol") or "")}
@@ -270,5 +293,7 @@ async def hyperliquid_state(
         "realized_pnl": realized_pnl,
         "fills": fills,
         "fills_error": fills_error,
+        "fills_stale": fills_stale,
+        "fills_as_of": fills_as_of,
         "mids": mids_out,
     }

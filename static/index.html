@@ -809,7 +809,9 @@ function renderTrades(list, err, total){
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
   const tbody = rows || `<tr><td colspan="8" class="note">无符合筛选的记录</td></tr>`;
-  return `<div class="scroll-area"><table><thead><tr>
+  const staleNote = (cache.hl && cache.hl.fills_stale && chainFilter!=='HL')
+    ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 成交读取为空/超时，已沿用上次成功抓到的记录（更新于 ${ago(cache.hl.fills_as_of)}前）。点「刷新」重试。</div>` : '';
+  return staleNote + `<div class="scroll-area"><table><thead><tr>
     <th>类型 ${selBox(typeFilter,'setTypeFilter',types)}</th>
     <th>币种/来源 ${selBox(coinFilter,'setCoinFilter',coins)}</th>
     <th>数量 ${sortBtn('amount')}</th>
