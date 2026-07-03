@@ -59,6 +59,13 @@
   .wcard .bal .v { font-weight: 800; }
   .wcard .bal .s { color: var(--muted); font-size: 11px; }
   .chip { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); letter-spacing: .4px; }
+  .tier { font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .tier-whale { background: #ece4ff; color: #6b3fd4; }
+  .tier-superwhale { background: #dcecff; color: #2563eb; }
+  .tier-shark { background: #ffe6d6; color: #e0640f; }
+  .tier-dolphin { background: #d5f1fb; color: #0e86c4; }
+  .tier-fish { background: #e2f6e8; color: #1f9d57; }
+  .tier-shrimp { background: #f0f1f4; color: #82838f; }
   .x { margin-left: 6px; color: var(--muted-2); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
   .x:hover { color: var(--red); background: #fdecec; }
   .empty { color: var(--muted); text-align: center; padding: 30px 12px; background: var(--card); border: 1px dashed var(--border); border-radius: 14px; }
@@ -430,6 +437,18 @@ function onAddrInput(){
   hint.textContent = (cat==="evm" && !anyEvmUsable()) ? "⚠️ 这是 EVM 地址，请在 .env 配置免费的 ETHERSCAN_API_KEY。" : "";
 }
 
+// 按总资产(含HL)自动分级
+function walletTier(usd){
+  usd=+usd||0;
+  if(usd>=1e8) return {t:"巨鲸", e:"🐳", c:"tier-whale"};
+  if(usd>=1e7) return {t:"超大户", e:"🐋", c:"tier-superwhale"};
+  if(usd>=1e6) return {t:"大户", e:"🦈", c:"tier-shark"};
+  if(usd>=1e5) return {t:"中户", e:"🐬", c:"tier-dolphin"};
+  if(usd>=1e4) return {t:"小户", e:"🐟", c:"tier-fish"};
+  return {t:"散户", e:"🦐", c:"tier-shrimp"};
+}
+function tierBadge(usd){ if(usd==null) return ""; const g=walletTier(usd); return `<span class="tier ${g.c}" title="按总资产(含HL)自动分级：巨鲸≥$100M·超大户≥$10M·大户≥$1M·中户≥$100K·小户≥$10K">${g.e} ${g.t}</span>`; }
+
 async function loadWallets(){
   const d=await api("/api/wallets");
   walletList=d.wallets;
@@ -450,7 +469,7 @@ async function loadWallets(){
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span>
         <span class="edit-ic" title="重命名" onclick="event.stopPropagation();renameWallet(${w.id})">${EDIT_SVG}</span></div>
-        <div class="ad mono">${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
+        <div class="ad mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span id="wtier-${w.id}">${cc&&cc.usd!=null?tierBadge(cc.usd):""}</span>${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
       <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
       <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
   }).join("");
@@ -464,23 +483,27 @@ async function fillCard(w){
   const pel=document.getElementById("wpnl-"+w.id);
   const key=w.chain+":"+w.address;
   const c=cardCache[key];
-  if(c && Date.now()-c.ts<60000){ el.textContent=c.text; if(pel) pel.innerHTML=c.pnl; return; }
+  if(c && Date.now()-c.ts<60000){ el.textContent=c.text; if(pel) pel.innerHTML=c.pnl; const tel=document.getElementById("wtier-"+w.id); if(tel) tel.innerHTML=tierBadge(c.usd); return; }
   try{
     if(EVM_CHAINS.includes(w.chain)){
       let total=0, have=false, upnl=0, pnlType='';
       if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
       try{ const hh=await api(`/api/hyperliquid?address=${w.address}&fills=1`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; }
         if(hh.unrealized_pnl){ upnl=hh.unrealized_pnl; pnlType='浮'; } else if(hh.realized_pnl){ upnl=hh.realized_pnl; pnlType='实'; } } }catch(e){}
-      let text;
+      let text, usdVal=have?total:null;
       if(have){ text=usd(total); el.textContent=text; }
       else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); text=fmt(b.native_amount)+" "+b.native_symbol; el.textContent=text; }
       const pnl = upnl ? `<span class="${upnl>=0?'pos':'neg'}">${pnlType} ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
       if(pel) pel.innerHTML=pnl;
-      cardCache[key]={text, pnl, ts:Date.now()};
+      const tel=document.getElementById("wtier-"+w.id); if(tel) tel.innerHTML=tierBadge(usdVal);
+      cardCache[key]={text, pnl, usd:usdVal, ts:Date.now()};
     } else {
       const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`);
-      const text=b.extra&&b.extra.total_usd!=null?usd(b.extra.total_usd):fmt(b.native_amount)+" "+b.native_symbol;
-      el.textContent=text; cardCache[key]={text, pnl:"总值", ts:Date.now()};
+      const usdVal=b.extra&&b.extra.total_usd!=null?b.extra.total_usd:null;
+      const text=usdVal!=null?usd(usdVal):fmt(b.native_amount)+" "+b.native_symbol;
+      el.textContent=text;
+      const tel=document.getElementById("wtier-"+w.id); if(tel) tel.innerHTML=tierBadge(usdVal);
+      cardCache[key]={text, pnl:"总值", usd:usdVal, ts:Date.now()};
     }
   }catch(e){ el.textContent="—"; }
 }
@@ -649,7 +672,7 @@ function renderDetail(){
 
   const head=`<div class="det-head">
     <div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
-    <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span></div>
+    <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span>${totalUsd!=null?" "+tierBadge(totalUsd):""}</div>
       <div class="ad mono">${esc(sel.address)}${copyBtn(sel.address)}</div></div>
     <div class="total"><div class="big">${totalUsd!=null?usd(totalUsd):nativeStr}</div>
       <div class="sub">${hlUsd>0?`钱包 ${usd(walletUsd||0)} · ⚡Hyperliquid ${usd(hlUsd)}`:(isEvmM&&port&&!port.__err?`${tokenCount} 个代币 · ${(port.chains||[]).length} 条链`:(walletUsd!=null?nativeStr:"原生币余额"))}</div></div></div>`;
