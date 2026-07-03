@@ -31,9 +31,9 @@ _LB_TTL = 600  # 10 分钟
 LB_WINDOWS = ("day", "week", "month", "allTime")
 
 
-async def _post(http: httpx.AsyncClient, body: dict) -> object:
+async def _post(http: httpx.AsyncClient, body: dict, timeout: float = 20) -> object:
     try:
-        resp = await http.post(HL_API, json=body, timeout=20)
+        resp = await http.post(HL_API, json=body, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
     except (httpx.HTTPError, ValueError) as exc:
@@ -123,8 +123,21 @@ async def leaderboard(
 
 
 async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 300) -> list:
-    """Recent Hyperliquid trades (fills) as normalized buy/sell actions."""
-    data = await _post(http, {"type": "userFills", "user": address})
+    """Recent Hyperliquid trades (fills) as normalized buy/sell actions.
+
+    For very active whales the userFills payload is large and, over a flaky
+    (e.g. cross-border) connection, can time out; retry with a longer timeout
+    so we don't silently end up showing "no trades".
+    """
+    data = None
+    for attempt in range(3):
+        try:
+            data = await _post(http, {"type": "userFills", "user": address}, timeout=45)
+            break
+        except ChainError:
+            if attempt == 2:
+                raise
+            await asyncio.sleep(0.6 * (attempt + 1))
     out: list[dict] = []
     if isinstance(data, list):
         for f in data:
@@ -196,7 +209,10 @@ async def hyperliquid_state(
     if with_fills:
         coros["fills"] = _user_fills(http, address)
     res = await asyncio.gather(*[coros[k] for k in keys], return_exceptions=True)
-    got = {k: (v if not isinstance(v, Exception) else None) for k, v in zip(keys, res)}
+    raw = dict(zip(keys, res))
+    got = {k: (v if not isinstance(v, Exception) else None) for k, v in raw.items()}
+    # 区分「确实没有成交」和「成交记录抓取失败/超时」，避免误显示为无交易
+    fills_error = with_fills and isinstance(raw.get("fills"), Exception)
 
     account_value, positions = _parse_clearinghouse(got.get("main"))
 
@@ -253,5 +269,6 @@ async def hyperliquid_state(
         "unrealized_pnl": unrealized_pnl,
         "realized_pnl": realized_pnl,
         "fills": fills,
+        "fills_error": fills_error,
         "mids": mids_out,
     }

@@ -777,6 +777,8 @@ function tradeBadge(s){
 function renderTrades(list, err, total){
   if(!list || !list.length){
     if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
+    if(cache.hl && cache.hl.fills_error && chainFilter!=='HL')
+      return `<div class="note">⚠️ Hyperliquid 成交记录读取超时/失败（大户成交量大、跨境访问不稳定），并非真的没有交易。点右上「刷新」重试。</div>`;
     return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
   }
   const types=[...new Set(list.map(s=>tradeBadge(s).t))];
@@ -1074,7 +1076,12 @@ document.addEventListener("click",(e)=>{
 });
 
 // ---- Hyperliquid 排行榜 ----
-function openLeaderboard(){ document.getElementById("lbModal").classList.add("show"); if(lbRows.length) renderLeaderboard(); else loadLeaderboard(); }
+function openLeaderboard(){
+  lbSign={day:"",week:"",month:""}; lbSort="week"; lbDir="desc";  // 每次打开都回到默认（清空正负筛选与排序）
+  document.getElementById("lbModal").classList.add("show");
+  if(lbRows.length) renderLeaderboard();  // 先用默认状态即时渲染已有数据
+  loadLeaderboard();                       // 再按默认排序刷新（并清空勾选）
+}
 function closeLeaderboard(){ document.getElementById("lbModal").classList.remove("show"); }
 const LB_COLS=[["value","账户价值"],["day","日盈亏"],["week","周盈亏"],["month","月盈亏"],["allTime","总盈亏"]];
 function lbSetSort(k){ if(lbSort===k){ lbDir = lbDir==="desc"?"asc":"desc"; } else { lbSort=k; lbDir="desc"; } loadLeaderboard(); }
