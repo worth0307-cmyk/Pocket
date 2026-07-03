@@ -7,6 +7,7 @@ Docs: https://docs.etherscan.io/etherscan-v2
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Optional
 
@@ -173,13 +174,16 @@ class EVMClient(ChainClient):
     async def get_actions(self, address: str, limit: int = 20) -> list[Action]:
         address = self.normalize_address(address)
         offset = max(limit * 2, 30)
-        normal = await self._call(
-            "account", "txlist", address=address,
-            page=1, offset=offset, sort="desc",
-        )
-        tokens = await self._call(
-            "account", "tokentx", address=address,
-            page=1, offset=offset, sort="desc",
+        # 两个列表接口互不依赖，并行拉取，历史查询快约一倍。
+        normal, tokens = await asyncio.gather(
+            self._call(
+                "account", "txlist", address=address,
+                page=1, offset=offset, sort="desc",
+            ),
+            self._call(
+                "account", "tokentx", address=address,
+                page=1, offset=offset, sort="desc",
+            ),
         )
         normal = normal if isinstance(normal, list) else []
         tokens = tokens if isinstance(tokens, list) else []

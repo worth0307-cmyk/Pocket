@@ -284,9 +284,15 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             raise HTTPException(status_code=400, detail="没有有效的 EVM/HL 地址")
         # with_fills=True so builder-deployed perps (股票/商品，HIP-3 子交易所，
         # 形如 dex:GOLD) also get discovered and counted, not just main crypto.
+        # 限并发：每个钱包内部还有 4+ 个请求，几十个钱包全放会打爆 HL 的 IP 限流。
+        sem = asyncio.Semaphore(8)
+
+        async def _state(a: str):
+            async with sem:
+                return await hl.hyperliquid_state(app.state.http, a, with_fills=True)
+
         states = await asyncio.gather(
-            *[hl.hyperliquid_state(app.state.http, a, with_fills=True) for a in addrs],
-            return_exceptions=True,
+            *[_state(a) for a in addrs], return_exceptions=True
         )
 
         def leg():
@@ -363,16 +369,24 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
 
     @app.post("/api/wallets/batch")
     async def api_batch(body: BatchAdd, _: None = Depends(auth)) -> dict:
-        from chains.evm import _ADDR_RE
+        from chains.evm import _ADDR_RE, is_evm_chain
         chain = (body.chain or "eth").lower()
+        # 按链校验（此前统一用 EVM 正则，导致 sol/btc 批量导入全被判无效）。
+        # EVM 用正则即可（导入 HL 排行榜地址不应依赖 Etherscan key）。
+        if is_evm_chain(chain):
+            def _ok(a: str) -> bool: return bool(_ADDR_RE.match(a))
+            def _norm(a: str) -> str: return a.lower()
+        else:
+            client = _client(chain)
+            _ok, _norm = client.is_valid_address, client.normalize_address
         added = skipped = invalid = 0
         for it in body.items[:200]:
             a = (it.address or "").strip()
-            if not _ADDR_RE.match(a):
+            if not _ok(a):
                 invalid += 1
                 continue
             created, _w = db.add_wallet(
-                chain, a.lower(), (it.label or "").strip(), config.alert_chat_id
+                chain, _norm(a), (it.label or "").strip(), config.alert_chat_id
             )
             if created:
                 added += 1
@@ -412,7 +426,11 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
 
     @app.get("/")
     async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        # no-store：更新代码后普通 F5 即可生效，不再需要 Ctrl+Shift+R 强刷
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

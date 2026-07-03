@@ -247,6 +247,9 @@ async def hyperliquid_state(
     if with_fills:
         nowf = time.time()
         if fills:
+            if len(_fills_cache) > 300:  # 防长时间运行内存无限增长
+                oldest = min(_fills_cache, key=lambda k: _fills_cache[k]["ts"])
+                _fills_cache.pop(oldest, None)
             _fills_cache[address] = {"fills": fills, "ts": nowf}
             fills_as_of = int(nowf)
         else:

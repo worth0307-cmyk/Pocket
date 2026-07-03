@@ -17,9 +17,11 @@ import logging
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+import chains
+from chains.base import ActionsUnsupported, ChainError
 from chains.hyperliquid import hyperliquid_state
 from chains.portfolio import DEFAULT_EVM_CHAINS, evm_swaps
-from formatting import format_trade_alert
+from formatting import format_alert, format_trade_alert
 
 log = logging.getLogger("tracker")
 
@@ -80,7 +82,49 @@ async def _wallet_events(wallet, config, http) -> tuple[list[dict], float]:
     return events, total
 
 
+async def _poll_legacy(wallet, config, http, bot, db) -> None:
+    """Non-EVM chains (sol/btc): alert on new actions via the chain client,
+    using the original tx-hash cursor (these chains have no HL/DEX trades)."""
+    client = chains.get_client(wallet.chain, config, http)
+    if client is None:
+        return
+    try:
+        actions = await client.get_actions(wallet.address, limit=20)
+    except (ActionsUnsupported, ChainError):
+        return
+    if not actions:
+        return
+    newest = actions[0].tx_hash
+    if not wallet.cursor:
+        db.set_cursor(wallet.id, newest)
+        return
+    fresh = []
+    for a in actions:
+        if a.tx_hash == wallet.cursor:
+            break
+        fresh.append(a)
+    if not fresh:
+        return
+    db.set_cursor(wallet.id, newest)
+    chat_id = wallet.chat_id or config.alert_chat_id
+    if not chat_id:
+        return
+    for action in reversed(fresh[: config.max_alerts_per_poll]):
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=format_alert(action, wallet),
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("send alert failed: %s", exc)
+        await asyncio.sleep(0.3)
+
+
 async def _poll_wallet(wallet, config, http, bot, db) -> None:
+    if wallet.chain not in EVM_CHAINS:
+        return await _poll_legacy(wallet, config, http, bot, db)
     events, total = await _wallet_events(wallet, config, http)
     if not events:
         return

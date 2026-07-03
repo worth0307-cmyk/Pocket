@@ -39,7 +39,25 @@
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
   .hint-line { color: var(--orange); font-size: 12.5px; margin: 9px 4px 0; min-height: 16px; }
   .grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 24px; align-items: start; }
-  @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 920px) { .grid { grid-template-columns: minmax(0, 1fr); } }  /* minmax(0,·)：别让宽表格把单列撑爆 */
+  /* 移动端适配：搜索栏换行、收紧留白、详情头允许换行、隐藏次要信息 */
+  @media (max-width: 700px) {
+    .container { padding: 14px 12px 40px; }
+    header { padding: 0 14px; height: auto; min-height: 54px; flex-wrap: wrap; }
+    header .hint { display: none; }
+    .logo small { display: none; }
+    .search { flex-wrap: wrap; padding: 10px 12px; }
+    .search input { flex: 1 1 100%; height: 40px; order: -1; }
+    .search .detect { font-size: 11px; }
+    .search button { height: 38px; padding: 0 14px; flex: 1; }
+    .det-head { flex-wrap: wrap; padding: 14px; }
+    .det-head .total { text-align: left; width: 100%; }
+    .det-head .total .big { font-size: 22px; }
+    .tabs { flex-wrap: wrap; padding: 10px 12px 0; }
+    .tabbar-right { flex-wrap: wrap; margin-left: 0; row-gap: 4px; }
+    .stat { padding: 12px; } .stat .v { font-size: 16px; }
+    .modal-bg { padding: 12px 6px; }
+  }
   .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px;
     margin: 4px 2px 12px; display: flex; justify-content: space-between; }
   .section-title .count { color: var(--accent); }
@@ -86,9 +104,10 @@
   .chain-tab:hover { border-color: var(--accent-2); color: var(--accent); }
   .chain-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .chain-tab .u { font-weight: 800; margin-left: 4px; }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); }
-  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-  .stat { background: var(--card); padding: 16px 18px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--border); }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat { background: var(--card); padding: 16px 18px; min-width: 0; }
+  .stat .v { overflow-wrap: anywhere; }
   .stat .k { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; }
   .stat .v { font-size: 20px; font-weight: 800; margin-top: 3px; }
   .stat .v small { font-size: 12px; color: var(--muted); font-weight: 600; }
@@ -305,7 +324,7 @@ const STOCK_SYMS = new Set([
   "MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV","GLXY","BMNR","SNDK","WDC","STX","ROKU","WBD","SPCE","RKLB","JOBY",
   "SPCX","CRCL2","HIMS","APP","DELL","ORCL","IBM","CSCO","MRVL","ON","WOLF","ENPH","FSLR","PLUG","CHPT","AI","BBAI"]);
 // 可能出现在 builder 子交易所(带冒号)的加密币种，仍归加密
-const CRYPTO_SYMS = new Set(["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","LTC","BCH","DOT","MATIC","TRX","TON","SUI","APT","ARB","OP","HYPE","PEPE","SHIB","BONK","WIF","WLD","JUP","JTO","PYTH","TIA","SEI","INJ","AAVE","UNI","XMR","LIT","ENA","ONDO","FARTCOIN","kPEPE","kBONK","kSHIB"]);
+const CRYPTO_SYMS = new Set(["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","LTC","BCH","DOT","MATIC","TRX","TON","SUI","APT","ARB","OP","HYPE","PEPE","SHIB","BONK","WIF","WLD","JUP","JTO","PYTH","TIA","SEI","INJ","AAVE","UNI","XMR","LIT","ENA","ONDO","FARTCOIN","KPEPE","KBONK","KSHIB"]);  // coinBase() 已转大写，清单须全大写
 const CAT_CN = {crypto:"加密", stock:"股票", futures:"期货", other:"其它"};
 const CATS = ["crypto","stock","futures","other"];
 const INDEX_RE = /^[A-Z]{1,4}\d{2,4}$/;  // 指数名启发式：US500 / NAS100 / GER40 / JP225 / XYZ100
@@ -473,8 +492,8 @@ async function loadWallets(){
       <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
       <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
   }).join("");
-  // 串行填充各卡片总值/浮盈，避免一次性并发把免费接口打到限流
-  (async()=>{ for(const w of d.wallets){ await fillCard(w); } })();
+  // 3 个一批填充卡片总值/浮盈：比串行快 3 倍，又不会把免费接口打到限流
+  (async()=>{ const ws=d.wallets; for(let i=0;i<ws.length;i+=3){ await Promise.all(ws.slice(i,i+3).map(fillCard)); } })();
   syncListHeight();
 }
 
@@ -535,6 +554,7 @@ function highlightActive(){ const key=sel?sel.chain+":"+sel.address:""; document
 function syncListHeight(){
   const detail=document.getElementById("detail"), list=document.getElementById("walletList");
   if(!detail||!list) return;
+  if(window.innerWidth<=920){ list.style.maxHeight=""; list.style.overflowY=""; return; }  // 单列布局(移动端)不锁高度
   const listTop=list.getBoundingClientRect().top;              // 清单在视口中的顶部
   const detBottom=detail.getBoundingClientRect().bottom;       // 右侧模块底部
   const minBottom=Math.max(window.innerHeight-40, listTop+460);// 视口下限，保证清单足够高且稳定
@@ -603,6 +623,8 @@ async function loadAll(cur){
   }
   if(JSON.stringify(sel)!==tag) return;
   cache.updated=Date.now(); renderDetail();
+  const dkeys=Object.keys(detailCache);  // 快照上限 20 个，先淘汰最旧，防内存无限增长
+  if(dkeys.length>=20){ let old=dkeys[0]; for(const k of dkeys) if(detailCache[k].ts<detailCache[old].ts) old=k; delete detailCache[old]; }
   detailCache[detailKey(cur)]={ snap:{port:cache.port,bal:cache.bal,hist:cache.hist,pnl:cache.pnl,swaps:cache.swaps,hl:cache.hl}, ts:Date.now() };
 }
 async function loadStreamInto(cur){
@@ -619,7 +641,8 @@ async function loadStreamInto(cur){
   if(h.status==="fulfilled") cache.hist=h.value; else if(!(cache.hist&&!cache.hist.__err)) cache.hist={__err:h.reason&&h.reason.message};
   if(p.status==="fulfilled") cache.pnl=p.value; else if(!(cache.pnl&&cache.pnl.available)) cache.pnl={available:false};
 }
-async function refreshStream(){ const cur=sel; if(!cur) return; const tag=JSON.stringify(cur);
+async function refreshStream(){ if(document.hidden) return;  // 后台标签页不刷新，省免费额度
+  const cur=sel; if(!cur) return; const tag=JSON.stringify(cur);
   const tasks=[loadStreamInto(cur)];
   if(cur.category==="evm"){ tasks.push(api(`/api/hyperliquid?address=${encodeURIComponent(cur.address)}&fills=1`).then(d=>cache.hl=d).catch(()=>{})); }
   await Promise.all(tasks);
