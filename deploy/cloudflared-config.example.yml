@@ -1,0 +1,11 @@
+# 复制到 ~/.cloudflared/config.yml（运行 cloudflared 的用户家目录）
+# 把 <TUNNEL_ID> 换成 `cloudflared tunnel create pocket` 输出的隧道 ID，
+# credentials-file 换成对应的 <TUNNEL_ID>.json 实际路径。
+tunnel: <TUNNEL_ID>
+credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: pocket.arknove.com
+    service: http://localhost:8000
+  # 兜底：其它 host 一律 404
+  - service: http_status:404
