@@ -40,9 +40,14 @@ def build_application(config: Config, db: WalletDB) -> Application:
         if http is not None:
             await http.aclose()
 
+    builder = Application.builder().token(config.tg_token)
+    if config.tg_proxy:
+        # Route both the Bot API calls and long-polling through the proxy
+        # (Telegram is blocked in some regions).
+        builder = builder.proxy(config.tg_proxy).get_updates_proxy(config.tg_proxy)
+        log.info("Telegram 通过代理连接：%s", config.tg_proxy)
     app = (
-        Application.builder()
-        .token(config.tg_token)
+        builder
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
