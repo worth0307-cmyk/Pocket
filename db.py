@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     cursor    TEXT,
     added_at  INTEGER,
     unread    INTEGER DEFAULT 0,
+    sort_ts   INTEGER,
     UNIQUE(chain, address)
 );
 """
@@ -48,13 +49,15 @@ class WalletDB:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
-            # 旧库迁移：补 unread 列（已存在则忽略）
-            try:
-                self._conn.execute(
-                    "ALTER TABLE wallets ADD COLUMN unread INTEGER DEFAULT 0"
-                )
-            except sqlite3.OperationalError:
-                pass
+            # 旧库迁移：补列（已存在则忽略）
+            for ddl in (
+                "ALTER TABLE wallets ADD COLUMN unread INTEGER DEFAULT 0",
+                "ALTER TABLE wallets ADD COLUMN sort_ts INTEGER",
+            ):
+                try:
+                    self._conn.execute(ddl)
+                except sqlite3.OperationalError:
+                    pass
             self._conn.commit()
 
     def close(self) -> None:
@@ -75,9 +78,13 @@ class WalletDB:
         )
 
     def add_wallet(
-        self, chain: str, address: str, label: str, chat_id: str
+        self, chain: str, address: str, label: str, chat_id: str,
+        sort_ts: Optional[int] = None,
     ) -> tuple[bool, Optional[Wallet]]:
-        """Insert a wallet. Returns (created, wallet). created=False if it existed."""
+        """Insert a wallet. Returns (created, wallet). created=False if it existed.
+
+        ``sort_ts`` is the manual-order key (bigger = closer to the top);
+        defaults to now so newly added wallets appear first."""
         with self._lock:
             cur = self._conn.execute(
                 "SELECT * FROM wallets WHERE chain=? AND address=?",
@@ -86,10 +93,12 @@ class WalletDB:
             existing = cur.fetchone()
             if existing:
                 return False, self._row(existing)
+            now = int(time.time())
             self._conn.execute(
-                "INSERT INTO wallets (chain, address, label, chat_id, cursor, added_at)"
-                " VALUES (?,?,?,?,?,?)",
-                (chain, address, label, chat_id, None, int(time.time())),
+                "INSERT INTO wallets (chain, address, label, chat_id, cursor,"
+                " added_at, sort_ts) VALUES (?,?,?,?,?,?,?)",
+                (chain, address, label, chat_id, None, now,
+                 int(sort_ts) if sort_ts is not None else now),
             )
             self._conn.commit()
             row = self._conn.execute(
@@ -140,11 +149,64 @@ class WalletDB:
 
     def list_wallets(self) -> list[Wallet]:
         with self._lock:
-            # Newest-added first (highest id) so the latest wallet shows on top.
+            # 手动排序键优先（置顶/上移/导入置顶都改它），老数据退回添加时间。
             rows = self._conn.execute(
-                "SELECT * FROM wallets ORDER BY id DESC"
+                "SELECT * FROM wallets"
+                " ORDER BY COALESCE(sort_ts, added_at, 0) DESC, id DESC"
             ).fetchall()
             return [self._row(r) for r in rows]
+
+    def set_sort_ts(self, wallet_id: int, sort_ts: int) -> None:
+        """置顶/换位用：直接设排序键（越大越靠前）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallets SET sort_ts=? WHERE id=?",
+                (int(sort_ts), wallet_id),
+            )
+            self._conn.commit()
+
+    def move_wallet(self, wallet_id: int, action: str) -> bool:
+        """up/down=与相邻项交换排序键；top=排到最前。返回是否有变化。"""
+        wallets = self.list_wallets()  # 已按当前显示顺序
+        idx = next((i for i, w in enumerate(wallets) if w.id == wallet_id), None)
+        if idx is None:
+            return False
+        if action == "top":
+            if idx == 0:
+                return False
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT MAX(COALESCE(sort_ts, added_at, 0)) AS m FROM wallets"
+                ).fetchone()
+                top_key = int(row["m"] or 0) + 1
+                self._conn.execute(
+                    "UPDATE wallets SET sort_ts=? WHERE id=?", (top_key, wallet_id)
+                )
+                self._conn.commit()
+            return True
+        other = idx - 1 if action == "up" else idx + 1
+        if other < 0 or other >= len(wallets):
+            return False  # 已在最顶/最底
+
+        def key(w: Wallet) -> int:
+            row = self._conn.execute(
+                "SELECT COALESCE(sort_ts, added_at, 0) AS k FROM wallets WHERE id=?",
+                (w.id,),
+            ).fetchone()
+            return int(row["k"]) if row else 0
+
+        with self._lock:
+            ka, kb = key(wallets[idx]), key(wallets[other])
+            if ka == kb:  # 键相同（同秒导入），错开一位保证交换生效
+                kb += 1 if action == "up" else -1
+            self._conn.execute(
+                "UPDATE wallets SET sort_ts=? WHERE id=?", (kb, wallets[idx].id)
+            )
+            self._conn.execute(
+                "UPDATE wallets SET sort_ts=? WHERE id=?", (ka, wallets[other].id)
+            )
+            self._conn.commit()
+        return True
 
     def set_label(self, wallet_id: int, label: str) -> Optional[Wallet]:
         with self._lock:

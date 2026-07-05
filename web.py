@@ -75,6 +75,10 @@ class RenameReq(BaseModel):
     label: str = ""
 
 
+class MoveReq(BaseModel):
+    action: str  # up / down / top
+
+
 class BatchItem(BaseModel):
     address: str
     label: str = ""
@@ -173,6 +177,14 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         """查看该钱包后清零未读提醒（红圈）。"""
         db.clear_unread(wallet_id)
         return {"ok": True}
+
+    @app.post("/api/wallets/{wallet_id}/move")
+    async def api_move(
+        wallet_id: int, body: MoveReq, _: None = Depends(auth)
+    ) -> dict:
+        if body.action not in ("up", "down", "top"):
+            raise HTTPException(status_code=400, detail="action 须为 up/down/top")
+        return {"moved": db.move_wallet(wallet_id, body.action)}
 
     @app.get("/api/balance")
     async def api_balance(
@@ -387,18 +399,25 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
             client = _client(chain)
             _ok, _norm = client.is_valid_address, client.normalize_address
         added = skipped = invalid = 0
-        for it in body.items[:200]:
+        # 导入的地址整体置顶，且保持文件顺序（第一条排最上）：
+        # 排序键从 now 逐条递减；已在清单里的也一并上浮。
+        import time as _t
+        base = int(_t.time())
+        for idx, it in enumerate(body.items[:200]):
             a = (it.address or "").strip()
             if not _ok(a):
                 invalid += 1
                 continue
-            created, _w = db.add_wallet(
-                chain, _norm(a), (it.label or "").strip(), config.alert_chat_id
+            ts = base - idx
+            created, w = db.add_wallet(
+                chain, _norm(a), (it.label or "").strip(), config.alert_chat_id,
+                sort_ts=ts,
             )
             if created:
                 added += 1
             else:
                 skipped += 1
+                db.set_sort_ts(w.id, ts)  # 已存在的导入项也提到顶部
         return {"added": added, "skipped": skipped, "invalid": invalid}
 
     @app.get("/api/hyperliquid")

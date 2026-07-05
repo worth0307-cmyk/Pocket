@@ -23,7 +23,7 @@
     display: grid; place-items: center; color: #fff; font-weight: 900; box-shadow: 0 4px 12px rgba(255,96,52,.35); }
   .logo small { color: var(--muted); font-weight: 500; font-size: 12px; }
   header .hint { color: var(--muted); font-size: 12px; }
-  .container { max-width: 1800px; margin: 0 auto; padding: 22px 32px 60px; }
+  .container { max-width: none; margin: 0 auto; padding: 22px 24px 60px; }  /* 吃满全宽，留白让给内容 */
   .hero { margin-bottom: 24px; }
   .search { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
     padding: 10px 10px 10px 18px; display: flex; align-items: center; gap: 12px; }
@@ -38,7 +38,8 @@
   .btn-ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
   .hint-line { color: var(--orange); font-size: 12.5px; margin: 9px 4px 0; min-height: 16px; }
-  .grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 24px; align-items: start; }
+  .grid { display: grid; grid-template-columns: 430px minmax(0, 1fr); gap: 24px; align-items: start; }  /* 清单列拉宽 */
+  @media (max-width: 1280px) { .grid { grid-template-columns: 350px minmax(0, 1fr); } }
   @media (max-width: 920px) { .grid { grid-template-columns: minmax(0, 1fr); } }  /* minmax(0,·)：别让宽表格把单列撑爆 */
   /* 移动端适配：搜索栏换行、收紧留白、详情头允许换行、隐藏次要信息 */
   @media (max-width: 700px) {
@@ -68,6 +69,11 @@
     color: var(--muted-2); background: #fff; border: 1px solid var(--border); cursor: pointer; opacity: 0; transition: opacity .12s, color .12s, border-color .12s; }
   .wcard:hover .wdel { opacity: 1; }
   .wdel:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
+  .wmove { position: absolute; bottom: 6px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+  .wcard:hover .wmove { opacity: 1; }
+  .wmove span { width: 22px; height: 20px; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; user-select: none; }
+  .wmove span:hover { color: var(--accent); border-color: var(--accent-2); }
   .wcard.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; position: relative; }
   .wbadge { position: absolute; top: -5px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
@@ -494,7 +500,12 @@ async function loadWallets(){
         <span class="edit-ic" title="重命名" onclick="event.stopPropagation();renameWallet(${w.id})">${EDIT_SVG}</span></div>
         <div class="ad mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span id="wtier-${w.id}">${cc&&cc.usd!=null?tierBadge(cc.usd):""}</span>${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
       <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
-      <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div></div>`;
+      <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div>
+      <div class="wmove">
+        <span title="置顶" onclick="event.stopPropagation();moveWallet(${w.id},'top')">📌</span>
+        <span title="上移" onclick="event.stopPropagation();moveWallet(${w.id},'up')">↑</span>
+        <span title="下移" onclick="event.stopPropagation();moveWallet(${w.id},'down')">↓</span>
+      </div></div>`;
   }).join("");
   // 3 个一批填充卡片总值/浮盈：比串行快 3 倍，又不会把免费接口打到限流
   (async()=>{ const ws=d.wallets; for(let i=0;i<ws.length;i+=3){ await Promise.all(ws.slice(i,i+3).map(fillCard)); } })();
@@ -546,6 +557,15 @@ async function doAdd(chain,address){
   }catch(e){ toast(e.message); }
 }
 async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
+async function moveWallet(id, action){
+  const list=document.getElementById("walletList"), keep=list?list.scrollTop:0;
+  try{
+    const r=await api(`/api/wallets/${id}/move`,{method:"POST",body:JSON.stringify({action})});
+    if(!r.moved){ toast(action==='down'?"已在最底部":"已在最顶部"); return; }
+    await loadWallets();
+    if(list) list.scrollTop = action==='top' ? 0 : keep;  // 保持滚动位置，置顶则回到顶部
+  }catch(e){ toast(e.message); }
+}
 async function clearAllWallets(){
   if(!confirm("确定清空全部跟踪的钱包？此操作不可撤销。")) return;
   try{ const r=await api("/api/wallets",{method:"DELETE"});
@@ -943,12 +963,16 @@ function toggleSelectAll(){
 }
 function exportWallets(){
   if(!walletList.length) return toast("清单为空");
-  const data=walletList.map(w=>({chain:w.chain, address:w.address, label:w.label||""}));
+  // 勾选了就只导出勾选的；没勾选导出全部
+  const selSet = analysisSet.size ? new Set([...analysisSet].map(a=>(a||'').toLowerCase())) : null;
+  const items = selSet ? walletList.filter(w=>selSet.has((w.address||'').toLowerCase())) : walletList;
+  if(!items.length) return toast("勾选的地址不在清单中");
+  const data=items.map(w=>({chain:w.chain, address:w.address, label:w.label||""}));
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob), a=document.createElement("a");
   a.href=url; a.download=`pocket-wallets-${new Date().toISOString().slice(0,10)}.json`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  toast(`已导出 ${data.length} 个钱包`);
+  toast(`已导出 ${data.length} 个钱包${selSet?"（已勾选）":"（全部）"}`);
 }
 function triggerImport(){ document.getElementById("importFile").click(); }
 function normImportChain(ch,address){ ch=(ch||"").toLowerCase().trim();
