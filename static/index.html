@@ -245,10 +245,15 @@
           </span></div>
         <div class="list-tools" id="listTools">
           <button class="tool-btn need-wallets" id="selAllBtn" onclick="toggleSelectAll()">全选</button>
+          <select class="th-filter need-wallets" id="tierFilter" style="max-width:none;font-size:12px;height:28px" onchange="setListTier(this.value)" title="按账户级别筛选清单">
+            <option value="">全部等级</option>
+            <option value="巨鲸">🐳 巨鲸</option><option value="超大户">🐋 超大户</option><option value="大户">🦈 大户</option>
+            <option value="中户">🐬 中户</option><option value="小户">🐟 小户</option><option value="散户">🦐 散户</option>
+          </select>
           <button class="tool-btn" onclick="triggerImport()">导入</button>
           <button class="tool-btn need-wallets" onclick="exportWallets()">导出</button>
-          <button class="tool-btn danger need-wallets" onclick="purgeInactive()" title="移除没有任何买卖/动作记录的地址">清理无交易</button>
-          <button class="tool-btn danger need-wallets" id="clearBtn" onclick="clearAllWallets()">清空</button>
+          <button class="tool-btn danger need-wallets" onclick="purgeInactive()" title="并行扫描并移除没有任何买卖/动作记录的地址">清理无交易</button>
+          <button class="tool-btn danger need-wallets" id="clearBtn" onclick="clearAllWallets()" title="删除勾选的地址（全选后可清空全部）">清空选中</button>
           <input type="file" id="importFile" accept=".json,.txt,.csv" style="display:none" onchange="importWallets(this)">
         </div>
         <div id="walletList"><div class="spinner">加载中…</div></div>
@@ -292,6 +297,7 @@ let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
 let typeFilter = "", coinFilter = "", sortKey = "", sortDir = "desc";  // 动作流列筛选/排序
 let sumCoin = "", sumSort = "", sumDir = "desc";                      // 币种汇总列筛选/排序
 let hlCoin = "", hlSide = "", hlSort = "", hlDir = "desc";            // 持仓表筛选/排序
+let listTier = "";                                                    // 跟踪清单按账户级别筛选
 let timer = null, autoOn = true;
 let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
 let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
@@ -480,6 +486,14 @@ function walletTier(usd){
   return {t:"散户", e:"🦐", c:"tier-shrimp"};
 }
 function tierBadge(usd){ if(usd==null) return ""; const g=walletTier(usd); return `<span class="tier ${g.c}" title="按总资产(含HL)自动分级：巨鲸≥$100M·超大户≥$10M·大户≥$1M·中户≥$100K·小户≥$10K">${g.e} ${g.t}</span>`; }
+function setListTier(v){ listTier=v; applyListTier(); }
+function applyListTier(){  // 按账户级别过滤清单卡片（等级来自卡片实测总值，未加载完的暂隐藏）
+  document.querySelectorAll('.wcard').forEach(card=>{
+    if(!listTier){ card.style.display=""; return; }
+    const cc=cardCache[card.dataset.key];
+    card.style.display = (cc && cc.usd!=null && walletTier(cc.usd).t===listTier) ? "" : "none";
+  });
+}
 
 async function loadWallets(){
   const d=await api("/api/wallets");
@@ -511,7 +525,8 @@ async function loadWallets(){
       </div></div>`;
   }).join("");
   // 3 个一批填充卡片总值/浮盈：比串行快 3 倍，又不会把免费接口打到限流
-  (async()=>{ const ws=d.wallets; for(let i=0;i<ws.length;i+=3){ await Promise.all(ws.slice(i,i+3).map(fillCard)); } })();
+  (async()=>{ const ws=d.wallets; for(let i=0;i<ws.length;i+=3){ await Promise.all(ws.slice(i,i+3).map(fillCard)); applyListTier(); } })();
+  applyListTier();
   syncListHeight();
 }
 
@@ -570,12 +585,20 @@ async function moveWallet(id, action){
   }catch(e){ toast(e.message); }
 }
 async function clearAllWallets(){
-  if(!confirm("确定清空全部跟踪的钱包？此操作不可撤销。")) return;
-  try{ const r=await api("/api/wallets",{method:"DELETE"});
-    toast(`已清空 ${r.removed} 个钱包`); sel=null; inAnalysis=false; stopTimer(); cardCache={}; detailCache={};
+  // 只删勾选的地址；想清空全部先点「全选」再点这里
+  const selSet=new Set([...analysisSet].map(a=>(a||'').toLowerCase()));
+  const targets=walletList.filter(w=>selSet.has((w.address||'').toLowerCase()));
+  if(!targets.length) return toast("请先勾选要删除的地址（点「全选」后可清空全部）");
+  if(!confirm(`确定移除勾选的 ${targets.length} 个地址？此操作不可撤销。`)) return;
+  let n=0;
+  for(const w of targets){ try{ await api("/api/wallets/"+w.id,{method:"DELETE"}); n++; }catch(e){} }
+  analysisSet.clear();
+  if(sel && selSet.has((sel.address||'').toLowerCase())){  // 正在看的钱包被删了就复位详情
+    sel=null; inAnalysis=false; stopTimer();
     document.getElementById("detail").innerHTML='<div class="empty" style="margin:0;border:none">粘贴一个钱包地址并点「查询」，或从左侧选择已跟踪的钱包。</div>';
-    await loadWallets();
-  }catch(e){ toast(e.message); }
+  }
+  toast(`已移除 ${n} 个地址`);
+  await loadWallets();
 }
 function highlightActive(){ const key=sel?sel.chain+":"+sel.address:""; document.querySelectorAll('.wcard').forEach(el=>el.classList.toggle('active', el.dataset.key===key)); }
 function syncListHeight(){
@@ -1035,28 +1058,13 @@ async function importWallets(input){
 }
 async function purgeInactive(){
   if(!walletList.length) return toast("清单为空");
-  if(!confirm("将逐个检查地址是否有买卖/动作记录，并移除完全没有记录的地址。\n（查询失败的地址会保留，不会误删）\n继续？")) return;
-  toast("正在检查各地址的交易记录…");
-  const dead=[];
-  for(const w of walletList){
-    try{
-      let has=false;
-      if(EVM_CHAINS.includes(w.chain)){
-        const addr=encodeURIComponent(w.address);
-        const [sw,hlr]=await Promise.all([
-          api(`/api/swaps?address=${addr}&chains=${EVM_CHAINS.join(",")}&limit=1`).catch(()=>null),
-          api(`/api/hyperliquid?address=${addr}&fills=1`).catch(()=>null),
-        ]);
-        has = (sw&&sw.swaps&&sw.swaps.length>0) || (hlr&&hlr.fills&&hlr.fills.length>0);
-      } else {
-        const h=await api(`/api/history?chain=${w.chain}&address=${encodeURIComponent(w.address)}&limit=1`).catch(()=>null);
-        has = !!(h&&h.actions&&h.actions.length>0);
-      }
-      if(!has) dead.push(w);
-    }catch(e){ /* 查询异常的保留 */ }
-  }
-  if(!dead.length) return toast("没有发现无交易记录的地址");
-  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？\n${dead.map(w=>shortAddr(w.address,8,6)).join("\n")}`)) return;
+  toast("正在并行扫描无交易地址…");
+  let r;
+  try{ r=await api("/api/wallets/scan_inactive",{method:"POST"}); }
+  catch(e){ return toast("扫描失败："+e.message); }
+  const dead=r.inactive||[];
+  if(!dead.length) return toast(`已检查 ${r.checked} 个地址，未发现无交易记录的`);
+  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？\n（查询失败的已自动保留，不会误删）\n${dead.map(w=>(w.label?w.label+" ":"")+shortAddr(w.address,8,6)).join("\n")}`)) return;
   let n=0; for(const w of dead){ try{ await api("/api/wallets/"+w.id,{method:"DELETE"}); n++; }catch(e){} }
   toast(`已移除 ${n} 个无交易记录的地址`);
   await loadWallets();

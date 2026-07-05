@@ -179,6 +179,64 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         db.clear_unread(wallet_id)
         return {"ok": True}
 
+    @app.post("/api/wallets/scan_inactive")
+    async def api_scan_inactive(_: None = Depends(auth)) -> dict:
+        """并行扫描清单，找出完全没有买卖/动作记录的地址（只查不删）。
+        以前由前端逐个串行查询（每个钱包拉完整 HL 成交+6 链 swaps），几十个
+        地址要数分钟；这里服务端并发探测、每源限时，秒级返回。"""
+        from chains.evm import is_evm_chain
+        wallets = db.list_wallets()
+        sem = asyncio.Semaphore(6)
+
+        async def probe(w):
+            """返回 w 表示无交易；None 表示有交易或无法确认（保留）。"""
+            async with sem:
+                try:
+                    if is_evm_chain(w.chain):
+                        try:  # HL 成交：一次限时探测，失败视为无法确认
+                            fills = await asyncio.wait_for(
+                                hl._user_fills(app.state.http, w.address, limit=1),
+                                timeout=30,
+                            )
+                        except Exception:  # noqa: BLE001
+                            return None
+                        if fills:
+                            return None
+                        if config.moralis_api_key:
+                            try:
+                                sw = await asyncio.wait_for(
+                                    pf.evm_swaps(
+                                        app.state.http, config.moralis_api_key,
+                                        w.address.lower(),
+                                        list(pf.DEFAULT_EVM_CHAINS), limit=1,
+                                    ),
+                                    timeout=25,
+                                )
+                            except Exception:  # noqa: BLE001
+                                return None
+                            if sw.get("swaps"):
+                                return None
+                        return w
+                    client = chains.get_client(w.chain, config, app.state.http)
+                    if client is None:
+                        return None
+                    try:
+                        actions = await asyncio.wait_for(
+                            client.get_actions(w.address, limit=1), timeout=25
+                        )
+                    except Exception:  # noqa: BLE001
+                        return None
+                    return None if actions else w
+                except Exception:  # noqa: BLE001 - 任何异常都保留，绝不误删
+                    return None
+
+        res = await asyncio.gather(*[probe(w) for w in wallets])
+        inactive = [
+            {"id": w.id, "chain": w.chain, "address": w.address, "label": w.label}
+            for w in res if w is not None
+        ]
+        return {"inactive": inactive, "checked": len(wallets)}
+
     @app.post("/api/wallets/{wallet_id}/move")
     async def api_move(
         wallet_id: int, body: MoveReq, _: None = Depends(auth)
