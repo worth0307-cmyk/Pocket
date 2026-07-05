@@ -34,6 +34,49 @@ _LB_TTL = 600  # 10 分钟
 # vanish between refreshes/days. In-memory only (cleared on restart).
 _fills_cache: dict = {}
 _FILLS_TTL = 6 * 3600  # 6 小时内用上次成功抓到的成交兜底
+
+# 同理：主账户(clearinghouseState)偶发失败时，账户价值/持仓兜底用上次快照，
+# 否则总资产塌成 0，前端「占资产」等指标全部失真。
+_state_cache: dict = {}
+_STATE_TTL = 6 * 3600
+
+# 现货交易对索引名(@107 等) → 基础币种符号 的映射，来自 spotMeta，改动很少。
+_spot_meta_cache: dict = {"map": None, "ts": 0.0}
+_SPOT_TTL = 3600
+
+
+async def _spot_map(http: httpx.AsyncClient) -> dict:
+    """Map spot-pair ids ("@107") and pair names ("HYPE/USDC") to the base
+    token symbol, so fills don't surface unreadable index names."""
+    now = time.time()
+    if _spot_meta_cache["map"] is not None and now - _spot_meta_cache["ts"] < _SPOT_TTL:
+        return _spot_meta_cache["map"]
+    try:
+        data = await _post(http, {"type": "spotMeta"})
+    except ChainError:
+        return _spot_meta_cache["map"] or {}
+    m: dict = {}
+    if isinstance(data, dict):
+        toks = {t.get("index"): t.get("name") for t in data.get("tokens", []) or []}
+        for u in data.get("universe", []) or []:
+            name = u.get("name") or ""
+            tl = u.get("tokens") or []
+            base = toks.get(tl[0]) if tl else None
+            if not base and "/" in name:
+                base = name.split("/")[0]
+            if base:
+                m[f"@{u.get('index')}"] = base
+                if name:
+                    m[name] = base
+    _spot_meta_cache["map"] = m
+    _spot_meta_cache["ts"] = now
+    return m
+
+
+def _spot_name(coin: str, smap: dict) -> str:
+    """@107 → HYPE·现货；未知索引原样返回。"""
+    base = smap.get(coin)
+    return f"{base}·现货" if base else coin
 # Windows the Hyperliquid leaderboard actually exposes (no biweekly / quarter).
 LB_WINDOWS = ("day", "week", "month", "allTime")
 
@@ -145,6 +188,7 @@ async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 1000) 
             if attempt == 2:
                 raise
             await asyncio.sleep(0.6 * (attempt + 1))
+    smap = await _spot_map(http)  # 把 @107 这类现货对索引翻译成币种名
     out: list[dict] = []
     if isinstance(data, list):
         for f in data:
@@ -154,7 +198,7 @@ async def _user_fills(http: httpx.AsyncClient, address: str, limit: int = 1000) 
             out.append({
                 "type": "BUY" if f.get("side") == "B" else "SELL",
                 "venue": "HL",
-                "token_symbol": f.get("coin") or "?",
+                "token_symbol": _spot_name(f.get("coin") or "?", smap),
                 "token_amount": sz,
                 "price_usd": px if px else None,
                 "value_usd": px * sz,
@@ -280,12 +324,39 @@ async def hyperliquid_state(
     positions.sort(key=lambda x: abs(x["value_usd"]), reverse=True)
     spot.sort(key=lambda x: x["usd"], reverse=True)
 
+    # 主账户读取失败时用上次成功快照兜底：否则账户价值/持仓全归零，
+    # 前端总资产塌缩、「占资产」等比例指标全部失真。
+    state_stale = False
+    main_failed = got.get("main") is None
+    if not main_failed:
+        if len(_state_cache) > 300:
+            oldest = min(_state_cache, key=lambda k: _state_cache[k]["ts"])
+            _state_cache.pop(oldest, None)
+        _state_cache[address] = {
+            "ts": time.time(), "account_value": account_value,
+            "positions": positions, "spot": spot, "spot_usd": spot_usd,
+        }
+    else:
+        snap = _state_cache.get(address)
+        if snap and time.time() - snap["ts"] < _STATE_TTL:
+            account_value = snap["account_value"]
+            positions = snap["positions"]
+            spot = snap["spot"]
+            spot_usd = snap["spot_usd"]
+            state_stale = True
+
     unrealized_pnl = sum(p["unrealized_pnl"] for p in positions)
     realized_pnl = sum(f["closed_pnl"] for f in fills)
     # Current mid prices for the coins we reference (so already-closed coins
-    # still show a 现价), kept small by filtering to seen coins.
+    # still show a 现价), kept small by filtering to seen coins. Spot-pair keys
+    # (@107) are translated to the same display names used in fills.
+    smap = await _spot_map(http) if with_fills else (_spot_meta_cache["map"] or {})
     seen = {p["coin"] for p in positions} | {f.get("token_symbol") for f in fills}
-    mids_out = {c: _f(mids[c]) for c in seen if c and c in mids}
+    mids_out = {}
+    for k, v in mids.items():
+        name = _spot_name(k, smap)
+        if name in seen:
+            mids_out[name] = _f(v)
     return {
         "account_value": account_value,
         "positions": positions,
@@ -298,5 +369,6 @@ async def hyperliquid_state(
         "fills_error": fills_error,
         "fills_stale": fills_stale,
         "fills_as_of": fills_as_of,
+        "state_stale": state_stale,
         "mids": mids_out,
     }

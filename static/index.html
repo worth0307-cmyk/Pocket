@@ -764,6 +764,8 @@ function renderDetail(){
 
 function renderHL(hl){
   if(!hl || (!hl.account_value && !(hl.positions||[]).length && !(hl.spot||[]).length)) return "";
+  const stale = hl.state_stale ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 账户读取失败，持仓/账户价值为上次成功快照。点「刷新」重试。</div>` : "";
+  if(stale && !(hl.positions||[]).length && !(hl.spot||[]).length) return stale;
   const prows=(hl.positions||[]).map(p=>`<tr>
     <td><b>${esc(p.coin||'?')}</b></td>
     <td><span class="badge ${p.side==='多'?'b-BUY':'b-SELL'}">${p.side}${p.leverage?` ${p.leverage}x`:''}</span></td>
@@ -776,7 +778,7 @@ function renderHL(hl){
   const srows=(hl.spot||[]).map(s=>`<div class="pf-row"><div class="coin" style="${avatarStyle(s.coin)}">${esc((s.coin||'?').slice(0,3))}</div>
     <div class="sym">${esc(s.coin||'?')} <span class="chip">HL现货</span><div class="sub2">${fmt(s.amount)}</div></div>
     <div class="amt"><div class="v">${s.usd?usd(s.usd):"—"}</div></div></div>`).join("");
-  return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${ptable}${srows}</div>`;
+  return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${stale}${ptable}${srows}</div>`;
 }
 
 // 按币种汇总成交，并结合当前持仓/现价计算浮动盈亏(HL 用真实值，EVM 用现价估算)
@@ -882,7 +884,7 @@ function renderTrades(list, err, total){
       <td class="amt-cell">${fmt(s.token_amount)}</td>
       <td>${price(s.price_usd)}</td>
       <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
-      <td style="color:var(--muted)">${(total>0 && s.value_usd!=null)?(s.value_usd/total*100).toFixed(2)+'%':'—'}</td>
+      <td style="color:var(--muted)">${(total>=1 && s.value_usd!=null)?(s.value_usd/total*100).toFixed(2)+'%':'—'}</td>
       <td class="t-time" title="${ago(s.timestamp)}前">${fmtDate(s.timestamp)}</td>
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
