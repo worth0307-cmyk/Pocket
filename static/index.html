@@ -289,6 +289,7 @@ let sel = null;           // {chain,address,label,category}
 let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
 let typeFilter = "", coinFilter = "", sortKey = "", sortDir = "desc";  // 动作流列筛选/排序
 let sumCoin = "", sumSort = "", sumDir = "desc";                      // 币种汇总列筛选/排序
+let hlCoin = "", hlSide = "", hlSort = "", hlDir = "desc";            // 持仓表筛选/排序
 let timer = null, autoOn = true;
 let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
 let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
@@ -600,9 +601,12 @@ function setChainFilter(v){ chainFilter=v; renderDetail(); }
 function setTypeFilter(v){ typeFilter=v; renderDetail(); }
 function setCoinFilter(v){ coinFilter=v; renderDetail(); }
 function setSort(k){ if(sortKey===k){ sortDir = sortDir==="desc"?"asc":"desc"; } else { sortKey=k; sortDir="desc"; } renderDetail(); }
-function resetTradeFilters(){ typeFilter=""; coinFilter=""; sortKey=""; sortDir="desc"; sumCoin=""; sumSort=""; sumDir="desc"; }
+function resetTradeFilters(){ typeFilter=""; coinFilter=""; sortKey=""; sortDir="desc"; sumCoin=""; sumSort=""; sumDir="desc"; hlCoin=""; hlSide=""; hlSort=""; hlDir="desc"; }
 function setSumCoin(v){ sumCoin=v; renderDetail(); }
 function setSumSort(k){ if(sumSort===k){ sumDir = sumDir==="desc"?"asc":"desc"; } else { sumSort=k; sumDir="desc"; } renderDetail(); }
+function setHlCoin(v){ hlCoin=v; renderDetail(); }
+function setHlSide(v){ hlSide=v; renderDetail(); }
+function setHlSort(k){ if(hlSort===k){ hlDir = hlDir==="desc"?"asc":"desc"; } else { hlSort=k; hlDir="desc"; } renderDetail(); }
 
 function stopTimer(){ if(timer){clearInterval(timer);timer=null;} }
 function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(refreshStream,60000); }
@@ -766,14 +770,33 @@ function renderHL(hl){
   if(!hl || (!hl.account_value && !(hl.positions||[]).length && !(hl.spot||[]).length)) return "";
   const stale = hl.state_stale ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 账户读取失败，持仓/账户价值为上次成功快照。点「刷新」重试。</div>` : "";
   if(stale && !(hl.positions||[]).length && !(hl.spot||[]).length) return stale;
-  const prows=(hl.positions||[]).map(p=>`<tr>
-    <td><b>${esc(p.coin||'?')}</b></td>
+  const allPos=hl.positions||[];
+  const totPos=allPos.reduce((s,p)=>s+Math.abs(p.value_usd||0),0);  // 占比分母=全部仓位价值（不随筛选变）
+  const hlCoins=[...new Set(allPos.map(p=>p.coin||'?'))];
+  let plist=allPos.slice();
+  if(hlCoin) plist=plist.filter(p=>(p.coin||'?')===hlCoin);
+  if(hlSide) plist=plist.filter(p=>p.side===hlSide);
+  if(hlSort){ const kf={value:p=>Math.abs(p.value_usd||0), pct:p=>Math.abs(p.value_usd||0), upnl:p=>p.unrealized_pnl||0, size:p=>Math.abs(p.size||0)}[hlSort];
+    if(kf) plist.sort((a,b)=>{ const av=kf(a), bv=kf(b); return hlDir==="desc"?bv-av:av-bv; }); }
+  const coinSel=`<select class="th-filter" onchange="setHlCoin(this.value)"><option value="">全部</option>${hlCoins.map(c=>`<option value="${esc(c)}" ${hlCoin===c?'selected':''}>${esc(c)}</option>`).join("")}</select>`;
+  const sideSel=`<select class="th-filter" onchange="setHlSide(this.value)"><option value="">全部</option><option value="多" ${hlSide==='多'?'selected':''}>多</option><option value="空" ${hlSide==='空'?'selected':''}>空</option></select>`;
+  const hs=(k)=>`<span class="th-sort ${hlSort===k?'on':''}" onclick="setHlSort('${k}')">${hlSort===k?(hlDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+  const prows=plist.map(p=>{
+    const pct = totPos>0 ? Math.abs(p.value_usd||0)/totPos*100 : null;
+    const pctCell = pct!=null
+      ? `<div style="display:flex;align-items:center;gap:6px"><div style="flex:0 0 42px;height:5px;background:#eef0f4;border-radius:3px;overflow:hidden"><div style="width:${Math.min(pct,100)}%;height:100%;background:var(--accent)"></div></div><span style="color:var(--muted);font-size:11px">${pct.toFixed(1)}%</span></div>`
+      : '—';
+    return `<tr>
+    <td><b>${esc(p.coin||'?')}</b>${coinCN(p.coin)?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(coinCN(p.coin))}</span>`:''}</td>
     <td><span class="badge ${p.side==='多'?'b-BUY':'b-SELL'}">${p.side}${p.leverage?` ${p.leverage}x`:''}</span></td>
     <td class="amt-cell">${usd(p.value_usd)}</td>
+    <td>${pctCell}</td>
     <td class="amt-cell ${p.unrealized_pnl>=0?'pos':'neg'}">${(p.unrealized_pnl>=0?'+':'')+usd(p.unrealized_pnl)}</td>
-    <td class="t-time">${fmt(Math.abs(p.size))} ${esc(p.coin||'')}</td></tr>`).join("");
-  const ptable=(hl.positions||[]).length
-    ? `<table><thead><tr><th>币种</th><th>方向/杠杆</th><th>仓位价值</th><th>未实现盈亏</th><th>数量</th></tr></thead><tbody>${prows}</tbody></table>`
+    <td class="t-time">${fmt(Math.abs(p.size))} ${esc(p.coin||'')}</td></tr>`;
+  }).join("");
+  const pbody = prows || `<tr><td colspan="6" class="note">无符合筛选的持仓</td></tr>`;
+  const ptable=allPos.length
+    ? `<table><thead><tr><th>币种 ${coinSel}</th><th>方向/杠杆 ${sideSel}</th><th>仓位价值 ${hs('value')}</th><th title="该仓位价值 ÷ 全部仓位价值">占比 ${hs('pct')}</th><th>未实现盈亏 ${hs('upnl')}</th><th>数量 ${hs('size')}</th></tr></thead><tbody>${pbody}</tbody></table>`
     : `<div class="note">无永续持仓</div>`;
   const srows=(hl.spot||[]).map(s=>`<div class="pf-row"><div class="coin" style="${avatarStyle(s.coin)}">${esc((s.coin||'?').slice(0,3))}</div>
     <div class="sym">${esc(s.coin||'?')} <span class="chip">HL现货</span><div class="sub2">${fmt(s.amount)}</div></div>
