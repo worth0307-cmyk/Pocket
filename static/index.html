@@ -69,7 +69,10 @@
   .wcard:hover .wdel { opacity: 1; }
   .wdel:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
   .wcard.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; }
+  .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; position: relative; }
+  .wbadge { position: absolute; top: -5px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+    background: #fa5151; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+    border: 2px solid var(--card); box-sizing: content-box; z-index: 2; }
   .wcard .info { flex: 1; min-width: 0; }
   .wcard .info .nm { font-weight: 700; display: flex; align-items: center; gap: 6px; }
   .wcard .info .ad { color: var(--muted); font-size: 12px; }
@@ -486,7 +489,7 @@ async function loadWallets(){
     const cc=cardCache[w.chain+":"+w.address];  // 用缓存值初始化，避免重建时闪 —/重读错觉
     return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
       ${EVM_CHAINS.includes(w.chain)?`<input type="checkbox" class="wsel" title="选入多钱包分析" data-addr="${w.address}" onclick="event.stopPropagation();toggleAnalysis('${w.address}',this.checked)" ${analysisSet.has(w.address)?'checked':''}>`:''}
-      <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}</div>
+      <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}${w.unread>0?`<span class="wbadge">${w.unread>99?'99+':w.unread}</span>`:''}</div>
       <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span>
         <span class="edit-ic" title="重命名" onclick="event.stopPropagation();renameWallet(${w.id})">${EDIT_SVG}</span></div>
         <div class="ad mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span id="wtier-${w.id}">${cc&&cc.usd!=null?tierBadge(cc.usd):""}</span>${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
@@ -563,7 +566,13 @@ function syncListHeight(){
   list.style.maxHeight=h+"px"; list.style.overflowY="auto";
 }
 window.addEventListener("resize", syncListHeight);
-function selectWallet(w){ inAnalysis=false; sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; resetTradeFilters(); highlightActive(); openDetail(true); }
+function markRead(w){  // 点开钱包=已读：立即摘掉红圈并通知后端清零
+  if(!w||!w.id) return;
+  const b=document.querySelector(`.wcard[data-key="${w.chain}:${w.address}"] .wbadge`); if(b) b.remove();
+  const lw=walletList.find(x=>x.id===w.id); if(lw) lw.unread=0;
+  api(`/api/wallets/${w.id}/read`,{method:"POST"}).catch(()=>{});
+}
+function selectWallet(w){ inAnalysis=false; markRead(w); sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; resetTradeFilters(); highlightActive(); openDetail(true); }
 function switchChain(id){ if(!sel) return;
   if(sel.category==="evm"&&MORALIS){ chainFilter=(chainFilter===id?null:id); renderDetail(); }
   else { sel.chain=id; openDetail(true); } }
@@ -1213,9 +1222,24 @@ async function importSelected(){
   }catch(e){ toast(e.message); }
 }
 
+// 每 60s 轻量刷新未读红圈（只改徽章 DOM，不重建列表、不打余额接口）
+async function refreshBadges(){
+  if(document.hidden) return;
+  try{
+    const d=await api("/api/wallets"); walletList=d.wallets;
+    d.wallets.forEach(w=>{
+      const av=document.querySelector(`.wcard[data-key="${w.chain}:${w.address}"] .avatar`); if(!av) return;
+      let b=av.querySelector(".wbadge"); const n=w.unread||0;
+      const isOpen = sel && sel.chain===w.chain && sel.address===w.address && !inAnalysis;
+      if(n>0 && !isOpen){ if(!b){ b=document.createElement("span"); b.className="wbadge"; av.appendChild(b); } b.textContent=n>99?"99+":n; }
+      else if(b) b.remove();
+    });
+  }catch(e){}
+}
 (async function init(){
   try{ await loadChains(); await loadWallets(); onAddrInput(); syncListHeight(); }
   catch(e){ document.getElementById("walletList").innerHTML=`<div class="empty">加载失败：${esc(e.message)}</div>`; }
+  setInterval(refreshBadges, 60000);
   // 后台预取排行榜(暖 5 分钟缓存)，点开时秒显
   api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=25`).then(d=>{ lbRows=d.rows||[]; }).catch(()=>{});
 })();

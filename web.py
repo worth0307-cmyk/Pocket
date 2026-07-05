@@ -61,6 +61,7 @@ def _wallet_dict(w) -> dict:
         "address": w.address,
         "label": w.label,
         "added_at": w.added_at,
+        "unread": getattr(w, "unread", 0) or 0,
     }
 
 
@@ -166,6 +167,12 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         if not wallet:
             raise HTTPException(status_code=404, detail="未找到")
         return {"wallet": _wallet_dict(wallet)}
+
+    @app.post("/api/wallets/{wallet_id}/read")
+    async def api_mark_read(wallet_id: int, _: None = Depends(auth)) -> dict:
+        """查看该钱包后清零未读提醒（红圈）。"""
+        db.clear_unread(wallet_id)
+        return {"ok": True}
 
     @app.get("/api/balance")
     async def api_balance(

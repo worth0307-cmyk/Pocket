@@ -109,6 +109,7 @@ async def _poll_legacy(wallet, config, http, bot, db) -> None:
     chat_id = wallet.chat_id or config.alert_chat_id
     if not chat_id:
         return
+    sent = 0
     for action in reversed(fresh[: config.max_alerts_per_poll]):
         try:
             await bot.send_message(
@@ -117,9 +118,12 @@ async def _poll_legacy(wallet, config, http, bot, db) -> None:
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
             )
+            sent += 1
         except Exception as exc:  # noqa: BLE001
             log.warning("send alert failed: %s", exc)
         await asyncio.sleep(0.3)
+    if sent:
+        db.bump_unread(wallet.id, sent)  # 面板红圈未读数
 
 
 async def _poll_wallet(wallet, config, http, bot, db) -> None:
@@ -154,6 +158,7 @@ async def _poll_wallet(wallet, config, http, bot, db) -> None:
         e for e in reversed(fresh)
         if (e.get("value_usd") or 0) >= config.alert_min_usd
     ]
+    sent = 0
     for e in sendable[: config.max_alerts_per_poll]:
         is_large = (e.get("value_usd") or 0) >= config.alert_large_usd
         try:
@@ -163,9 +168,12 @@ async def _poll_wallet(wallet, config, http, bot, db) -> None:
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
             )
+            sent += 1
         except Exception as exc:  # noqa: BLE001 - never let one alert kill the poll
             log.warning("send alert failed: %s", exc)
         await asyncio.sleep(0.3)
+    if sent:
+        db.bump_unread(wallet.id, sent)  # 面板红圈未读数
 
 
 async def poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:

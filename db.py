@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     chat_id   TEXT,
     cursor    TEXT,
     added_at  INTEGER,
+    unread    INTEGER DEFAULT 0,
     UNIQUE(chain, address)
 );
 """
@@ -35,6 +36,7 @@ class Wallet:
     chat_id: str
     cursor: Optional[str]
     added_at: int
+    unread: int = 0  # 未读提醒数（TG 推送后 +1，前端查看后清零）
 
 
 class WalletDB:
@@ -46,6 +48,13 @@ class WalletDB:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # 旧库迁移：补 unread 列（已存在则忽略）
+            try:
+                self._conn.execute(
+                    "ALTER TABLE wallets ADD COLUMN unread INTEGER DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass
             self._conn.commit()
 
     def close(self) -> None:
@@ -62,6 +71,7 @@ class WalletDB:
             chat_id=row["chat_id"] or "",
             cursor=row["cursor"],
             added_at=row["added_at"] or 0,
+            unread=row["unread"] or 0,
         )
 
     def add_wallet(
@@ -157,5 +167,21 @@ class WalletDB:
         with self._lock:
             self._conn.execute(
                 "UPDATE wallets SET cursor=? WHERE id=?", (cursor, wallet_id)
+            )
+            self._conn.commit()
+
+    def bump_unread(self, wallet_id: int, n: int = 1) -> None:
+        """TG 推送后累加该钱包的未读提醒数（前端红圈用）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallets SET unread=COALESCE(unread,0)+? WHERE id=?",
+                (n, wallet_id),
+            )
+            self._conn.commit()
+
+    def clear_unread(self, wallet_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallets SET unread=0 WHERE id=?", (wallet_id,)
             )
             self._conn.commit()
