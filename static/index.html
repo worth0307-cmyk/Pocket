@@ -1200,6 +1200,7 @@ function openLeaderboard(){
 }
 function closeLeaderboard(){ document.getElementById("lbModal").classList.remove("show"); }
 const LB_COLS=[["value","账户价值"],["day","日盈亏"],["week","周盈亏"],["month","月盈亏"],["allTime","总盈亏"]];
+const LB_COL_TIPS={value:"来自 HL 排行榜快照，可能被刷高或滞后；已跟踪的地址显示实测总资产（标「实时」）"};
 function lbSetSort(k){ if(lbSort===k){ lbDir = lbDir==="desc"?"asc":"desc"; } else { lbSort=k; lbDir="desc"; } loadLeaderboard(); }
 async function loadLeaderboard(){
   const lim=document.getElementById("lbLimit").value;
@@ -1222,9 +1223,20 @@ function lbTraderTh(){
   const opts=TIER_FILTER.map(([v,l])=>`<option value="${v}" ${lbTier===v?'selected':''}>${l}</option>`).join("");
   return `<th>交易者 <select class="th-filter" style="max-width:none" onchange="lbSetTier(this.value)"><option value="">全部等级</option>${opts}</select></th>`;
 }
+// 排行榜快照的账户价值可能被刷高/滞后；已跟踪的地址用清单实测的实时总值替代
+function lbEffVal(r){
+  const key=(r.address||'').toLowerCase();
+  const cc=cardCache["eth:"+key];
+  return (trackedAddrs.has(key) && cc && cc.usd!=null) ? cc.usd : r.account_value;
+}
+function lbIsLive(r){
+  const key=(r.address||'').toLowerCase();
+  const cc=cardCache["eth:"+key];
+  return trackedAddrs.has(key) && cc && cc.usd!=null;
+}
 function lbVisibleRows(){
   return lbRows.filter(r=>{
-    if(lbTier && walletTier(r.account_value).t!==lbTier) return false;
+    if(lbTier && walletTier(lbEffVal(r)).t!==lbTier) return false;
     for(const k of ["day","week","month"]){
       if(!lbSign[k]) continue;
       const p = r[k] ? r[k].pnl : 0;
@@ -1243,18 +1255,22 @@ function renderLeaderboard(){
       filter=`<select class="th-filter" onclick="event.stopPropagation()" onchange="event.stopPropagation();lbSetSign('${k}',this.value)">
         <option value="">全部</option><option value="pos" ${lbSign[k]==='pos'?'selected':''}>盈利</option><option value="neg" ${lbSign[k]==='neg'?'selected':''}>亏损</option></select>`;
     }
-    return `<th class="lb-h ${lbSort===k?'on':''}" onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span>${filter}</th>`;
+    return `<th class="lb-h ${lbSort===k?'on':''}" ${LB_COL_TIPS[k]?`title="${LB_COL_TIPS[k]}"`:''} onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span>${filter}</th>`;
   }).join("");
   const view=lbVisibleRows();
   if(!view.length){ document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th>${lbTraderTh()}${head}</tr></thead><tbody><tr><td colspan="8" class="note">无符合筛选的记录（当前 ${lbRows.length} 条里按等级/盈亏筛选后为空）</td></tr></tbody></table>`; updateLbCount(); return; }
   const rows=view.map((r,i)=>{
     const tracked=trackedAddrs.has((r.address||'').toLowerCase());
     const nm=customNames[(r.address||'').toLowerCase()]||r.display_name||shortAddr(r.address||'',8,6);
+    const effVal=lbEffVal(r), live=lbIsLive(r);
+    const valCell = live
+      ? `${usd(effVal)}<div style="font-weight:500;font-size:11px;color:var(--muted)" title="已跟踪，显示实测总资产；排行榜快照为 ${usd(r.account_value)}">实时</div>`
+      : usd(effVal);
     return `<tr>
       <td>${i+1}</td>
       <td><input type="checkbox" ${tracked?'disabled':''} ${lbSel.has(r.address)?'checked':''} onchange="lbToggle('${r.address}',this.checked)"></td>
-      <td><b>${esc(nm)}</b> ${tierBadge(r.account_value)} <span class="edit-ic" title="重命名" onclick="lbRename('${r.address}')">${EDIT_SVG}</span><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?` · <span class="lb-untrack" onclick="lbUntrack('${r.address}')">取消跟踪</span>`:''}</div></td>
-      <td class="amt-cell">${usd(r.account_value)}</td>
+      <td><b>${esc(nm)}</b> ${tierBadge(effVal)} <span class="edit-ic" title="重命名" onclick="lbRename('${r.address}')">${EDIT_SVG}</span><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?` · <span class="lb-untrack" onclick="lbUntrack('${r.address}')">取消跟踪</span>`:''}</div></td>
+      <td class="amt-cell">${valCell}</td>
       ${lbPnlCell(r.day)}${lbPnlCell(r.week)}${lbPnlCell(r.month)}${lbPnlCell(r.allTime)}</tr>`;
   }).join("");
   document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th>${lbTraderTh()}${head}</tr></thead><tbody>${rows}</tbody></table>`;
