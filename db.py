@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     added_at  INTEGER,
     unread    INTEGER DEFAULT 0,
     sort_ts   INTEGER,
+    pinned    INTEGER DEFAULT 0,
     UNIQUE(chain, address)
 );
 """
@@ -38,6 +39,7 @@ class Wallet:
     cursor: Optional[str]
     added_at: int
     unread: int = 0  # 未读提醒数（TG 推送后 +1，前端查看后清零）
+    pinned: int = 0  # 置顶标记：置顶组永远压在最上层，新增地址不会挤下去
 
 
 class WalletDB:
@@ -53,6 +55,7 @@ class WalletDB:
             for ddl in (
                 "ALTER TABLE wallets ADD COLUMN unread INTEGER DEFAULT 0",
                 "ALTER TABLE wallets ADD COLUMN sort_ts INTEGER",
+                "ALTER TABLE wallets ADD COLUMN pinned INTEGER DEFAULT 0",
             ):
                 try:
                     self._conn.execute(ddl)
@@ -75,6 +78,7 @@ class WalletDB:
             cursor=row["cursor"],
             added_at=row["added_at"] or 0,
             unread=row["unread"] or 0,
+            pinned=row["pinned"] or 0,
         )
 
     def add_wallet(
@@ -149,10 +153,12 @@ class WalletDB:
 
     def list_wallets(self) -> list[Wallet]:
         with self._lock:
-            # 手动排序键优先（置顶/上移/导入置顶都改它），老数据退回添加时间。
+            # 置顶组永远在最上（新增/导入都是 pinned=0，挤不掉它们）；
+            # 组内按手动排序键，老数据退回添加时间。
             rows = self._conn.execute(
                 "SELECT * FROM wallets"
-                " ORDER BY COALESCE(sort_ts, added_at, 0) DESC, id DESC"
+                " ORDER BY COALESCE(pinned,0) DESC,"
+                " COALESCE(sort_ts, added_at, 0) DESC, id DESC"
             ).fetchall()
             return [self._row(r) for r in rows]
 
@@ -165,28 +171,45 @@ class WalletDB:
             )
             self._conn.commit()
 
+    def _top_key(self) -> int:
+        row = self._conn.execute(
+            "SELECT MAX(COALESCE(sort_ts, added_at, 0)) AS m FROM wallets"
+        ).fetchone()
+        return int(row["m"] or 0) + 1
+
     def move_wallet(self, wallet_id: int, action: str) -> bool:
-        """up/down=与相邻项交换排序键；top=排到最前。返回是否有变化。"""
+        """top=钉住(永远压在最上层)；untop=取消钉住；up/down=组内与相邻项换位。
+        返回是否有变化。"""
         wallets = self.list_wallets()  # 已按当前显示顺序
         idx = next((i for i, w in enumerate(wallets) if w.id == wallet_id), None)
         if idx is None:
             return False
+        me = wallets[idx]
         if action == "top":
-            if idx == 0:
+            if me.pinned and idx == 0:
                 return False
             with self._lock:
-                row = self._conn.execute(
-                    "SELECT MAX(COALESCE(sort_ts, added_at, 0)) AS m FROM wallets"
-                ).fetchone()
-                top_key = int(row["m"] or 0) + 1
                 self._conn.execute(
-                    "UPDATE wallets SET sort_ts=? WHERE id=?", (top_key, wallet_id)
+                    "UPDATE wallets SET pinned=1, sort_ts=? WHERE id=?",
+                    (self._top_key(), wallet_id),
+                )
+                self._conn.commit()
+            return True
+        if action == "untop":
+            if not me.pinned:
+                return False
+            with self._lock:  # 取消后落在未置顶组的最上面
+                self._conn.execute(
+                    "UPDATE wallets SET pinned=0, sort_ts=? WHERE id=?",
+                    (self._top_key(), wallet_id),
                 )
                 self._conn.commit()
             return True
         other = idx - 1 if action == "up" else idx + 1
         if other < 0 or other >= len(wallets):
             return False  # 已在最顶/最底
+        if wallets[other].pinned != me.pinned:
+            return False  # 不跨置顶分组换位（先取消置顶）
 
         def key(w: Wallet) -> int:
             row = self._conn.execute(

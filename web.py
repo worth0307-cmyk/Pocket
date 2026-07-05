@@ -62,6 +62,7 @@ def _wallet_dict(w) -> dict:
         "label": w.label,
         "added_at": w.added_at,
         "unread": getattr(w, "unread", 0) or 0,
+        "pinned": getattr(w, "pinned", 0) or 0,
     }
 
 
@@ -182,8 +183,8 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
     async def api_move(
         wallet_id: int, body: MoveReq, _: None = Depends(auth)
     ) -> dict:
-        if body.action not in ("up", "down", "top"):
-            raise HTTPException(status_code=400, detail="action 须为 up/down/top")
+        if body.action not in ("up", "down", "top", "untop"):
+            raise HTTPException(status_code=400, detail="action 须为 up/down/top/untop")
         return {"moved": db.move_wallet(wallet_id, body.action)}
 
     @app.get("/api/balance")

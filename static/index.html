@@ -74,6 +74,8 @@
   .wmove span { width: 22px; height: 20px; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--border);
     border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; user-select: none; }
   .wmove span:hover { color: var(--accent); border-color: var(--accent-2); }
+  .wmove span.on { color: var(--accent); border-color: #ffd9cc; background: var(--accent-soft); }
+  .pin-mark { font-size: 11px; }
   .wcard.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; position: relative; }
   .wbadge { position: absolute; top: -5px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
@@ -497,13 +499,13 @@ async function loadWallets(){
     return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
       ${EVM_CHAINS.includes(w.chain)?`<input type="checkbox" class="wsel" title="选入多钱包分析" data-addr="${w.address}" onclick="event.stopPropagation();toggleAnalysis('${w.address}',this.checked)" ${analysisSet.has(w.address)?'checked':''}>`:''}
       <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}${w.unread>0?`<span class="wbadge">${w.unread>99?'99+':w.unread}</span>`:''}</div>
-      <div class="info"><div class="nm">${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span>
+      <div class="info"><div class="nm">${w.pinned?'<span class="pin-mark" title="已置顶">📌</span> ':''}${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span>
         <span class="edit-ic" title="重命名" onclick="event.stopPropagation();renameWallet(${w.id})">${EDIT_SVG}</span></div>
         <div class="ad mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span id="wtier-${w.id}">${cc&&cc.usd!=null?tierBadge(cc.usd):""}</span>${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
       <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
       <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div>
       <div class="wmove">
-        <span title="置顶" onclick="event.stopPropagation();moveWallet(${w.id},'top')">📌</span>
+        <span class="${w.pinned?'on':''}" title="${w.pinned?'取消置顶':'置顶（钉住，新增地址不会挤下去）'}" onclick="event.stopPropagation();moveWallet(${w.id},'${w.pinned?'untop':'top'}')">📌</span>
         <span title="上移" onclick="event.stopPropagation();moveWallet(${w.id},'up')">↑</span>
         <span title="下移" onclick="event.stopPropagation();moveWallet(${w.id},'down')">↓</span>
       </div></div>`;
@@ -562,7 +564,7 @@ async function moveWallet(id, action){
   const list=document.getElementById("walletList"), keep=list?list.scrollTop:0;
   try{
     const r=await api(`/api/wallets/${id}/move`,{method:"POST",body:JSON.stringify({action})});
-    if(!r.moved){ toast(action==='down'?"已在最底部":"已在最顶部"); return; }
+    if(!r.moved){ toast(action==='down'?"已在最底部（置顶组内不跨组移动）":action==='untop'?"未置顶":"已在最顶部（置顶组内不跨组移动）"); return; }
     await loadWallets();
     if(list) list.scrollTop = action==='top' ? 0 : keep;  // 保持滚动位置，置顶则回到顶部
   }catch(e){ toast(e.message); }
