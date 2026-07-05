@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime, timezone
+from datetime import datetime
 
 from chains.base import ACTION_EMOJI, Action, Balance
 from chains.util import fmt_amount, short_addr
@@ -15,9 +15,42 @@ def _esc(s: str) -> str:
 
 
 def _ts(unix: int) -> str:
+    """Server-local time, same format as the dashboard (fmtDate) — the old UTC
+    stamp made the same trade look like a different record next to the panel."""
     if not unix:
         return ""
-    return datetime.fromtimestamp(unix, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return datetime.fromtimestamp(unix).strftime("%Y-%m-%d %H:%M")
+
+
+# --- 与网页面板同一套数字格式（fmt/usd/price 的 Python 版），保证两边显示一致 ---
+def _fmt2(x) -> str:
+    x = float(x or 0)
+    a = abs(x)
+    if a >= 1e9:
+        return f"{x / 1e9:.2f}B"
+    if a >= 1e6:
+        return f"{x / 1e6:.2f}M"
+    return f"{x:,.2f}"
+
+
+def _usd2(x) -> str:
+    if x is None:
+        return "—"
+    x = float(x)
+    sign = "-" if x < 0 else ""
+    return f"{sign}${_fmt2(abs(x))}"
+
+
+def _price2(x) -> str:
+    if x is None:
+        return "—"
+    x = float(x)
+    a = abs(x)
+    if a >= 1:
+        return f"${x:,.2f}"
+    if a == 0:
+        return "$0.00"
+    return f"${float(f'{x:.2g}'):g}"  # 小于 1 的价格保留 2 位有效数字，同面板
 
 
 def format_balance(bal: Balance, label: str = "") -> str:
@@ -123,7 +156,7 @@ def format_trade_alert(e: dict, wallet: Wallet, tier: tuple[str, str],
     pnl = e.get("closed_pnl")
     url = e.get("explorer_url") or ""
 
-    price_str = f" @ ${fmt_amount(price)}" if price else ""
+    price_str = f" @ {_price2(price)}" if price else ""
     head = f"{'🔥 ' if is_large else ''}{tier_emoji} <b>{_esc(tier_name)}</b> · {_esc(name)}"
     # Only append the address chip when a custom label is set (otherwise the name
     # already is the short address and we'd show it twice).
@@ -131,11 +164,11 @@ def format_trade_alert(e: dict, wallet: Wallet, tier: tuple[str, str],
     lines = [
         f"{head}{addr_tag}",
         f"{side_emoji} {_esc(action)} <b>{_esc(coin)}</b> "
-        f"{fmt_amount(amount)}（≈ ${fmt_amount(value)}{price_str}）· {venue_tag}",
+        f"{_fmt2(amount)}（≈ {_usd2(value)}{price_str}）· {venue_tag}",
     ]
     if pnl:
-        sign = "+" if pnl >= 0 else "-"
-        lines.append(f"平仓盈亏 <b>{sign}${fmt_amount(abs(pnl))}</b>")
+        sign = "+" if pnl >= 0 else ""
+        lines.append(f"平仓盈亏 <b>{sign}{_usd2(pnl)}</b>")
     meta = []
     ts = _ts(e.get("timestamp") or 0)
     if ts:

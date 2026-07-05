@@ -844,6 +844,8 @@ function renderTrades(list, err, total){
   if(coinFilter) shown=shown.filter(s=>(s.token_symbol||'?')===coinFilter);
   if(sortKey){ const k={amount:'token_amount',price:'price_usd',value:'value_usd',time:'timestamp'}[sortKey];
     shown.sort((a,b)=>{ const av=+a[k]||0, bv=+b[k]||0; return sortDir==='desc'?bv-av:av-bv; }); }
+  const totalShown=shown.length;
+  if(totalShown>500) shown=shown.slice(0,500);  // 高频钱包成交上千条，渲染截断（筛选/排序已先生效）
 
   const selBox=(cur,onCh,items)=>`<select class="th-filter" onchange="${onCh}(this.value)"><option value="">全部</option>${items.map(t=>`<option value="${esc(t)}" ${cur===t?'selected':''}>${esc(t)}</option>`).join("")}</select>`;
   const sortBtn=(k)=>`<span class="th-sort ${sortKey===k?'on':''}" onclick="setSort('${k}')">${sortKey===k?(sortDir==='desc'?'↓':'↑'):'⇅'}</span>`;
@@ -864,7 +866,8 @@ function renderTrades(list, err, total){
       <td class="t-time" title="${ago(s.timestamp)}前">${fmtDate(s.timestamp)}</td>
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
-  const tbody = rows || `<tr><td colspan="8" class="note">无符合筛选的记录</td></tr>`;
+  const truncNote = totalShown>500 ? `<tr><td colspan="8" class="note">已显示前 500 条（筛选后共 ${totalShown} 条），用「类型/币种」下拉可缩小范围。</td></tr>` : '';
+  const tbody = (rows ? rows+truncNote : `<tr><td colspan="8" class="note">无符合筛选的记录</td></tr>`);
   const staleNote = (cache.hl && cache.hl.fills_stale && chainFilter!=='HL')
     ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 成交读取为空/超时，已沿用上次成功抓到的记录（更新于 ${ago(cache.hl.fills_as_of)}前）。点「刷新」重试。</div>` : '';
   return staleNote + `<div class="scroll-area"><table><thead><tr>
