@@ -487,12 +487,23 @@ function walletTier(usd){
 }
 function tierBadge(usd){ if(usd==null) return ""; const g=walletTier(usd); return `<span class="tier ${g.c}" title="按总资产(含HL)自动分级：巨鲸≥$100M·超大户≥$10M·大户≥$1M·中户≥$100K·小户≥$10K">${g.e} ${g.t}</span>`; }
 function setListTier(v){ listTier=v; applyListTier(); }
-function applyListTier(){  // 按账户级别过滤清单卡片（等级来自卡片实测总值，未加载完的暂隐藏）
-  document.querySelectorAll('.wcard').forEach(card=>{
-    if(!listTier){ card.style.display=""; return; }
-    const cc=cardCache[card.dataset.key];
-    card.style.display = (cc && cc.usd!=null && walletTier(cc.usd).t===listTier) ? "" : "none";
+function walletVisible(w){  // 等级筛选下该钱包是否可见（等级来自卡片实测总值）
+  if(!listTier) return true;
+  const cc=cardCache[w.chain+":"+w.address];
+  return !!(cc && cc.usd!=null && walletTier(cc.usd).t===listTier);
+}
+function applyListTier(){
+  // 隐藏不匹配的卡片；同时取消它们的勾选——否则「全选+清空选中」会把看不见的地址也删掉
+  walletList.forEach(w=>{
+    const card=document.querySelector(`.wcard[data-key="${w.chain}:${w.address}"]`); if(!card) return;
+    const vis=walletVisible(w);
+    card.style.display = vis ? "" : "none";
+    if(!vis && analysisSet.has(w.address)){
+      analysisSet.delete(w.address);
+      const cb=card.querySelector('.wsel'); if(cb) cb.checked=false;
+    }
   });
+  updateSelUI();
 }
 
 async function loadWallets(){
@@ -996,7 +1007,7 @@ function renderHistory(h){
 function switchTab(t){ activeTab=t; renderDetail(); }
 
 // ---- 跟踪清单：多选/全选/导入导出/清理 ----
-function evmWallets(){ return walletList.filter(w=>EVM_CHAINS.includes(w.chain)); }
+function evmWallets(){ return walletList.filter(w=>EVM_CHAINS.includes(w.chain) && walletVisible(w)); }  // 只含当前可见的（等级筛选后全选不会波及隐藏项）
 function toggleAnalysis(a,on){ if(on) analysisSet.add(a); else analysisSet.delete(a); updateSelUI(); }
 function updateAnalyzeBtn(){ const b=document.getElementById("analyzeBtn"); if(!b) return; if(analysisSet.size){ b.style.display=""; b.textContent=`分析 (${analysisSet.size})`; } else b.style.display="none"; }
 function updateSelUI(){
