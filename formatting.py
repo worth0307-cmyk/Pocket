@@ -157,6 +157,8 @@ def format_trade_alert(e: dict, wallet: Wallet, tier: tuple[str, str],
     url = e.get("explorer_url") or ""
 
     price_str = f" @ {_price2(price)}" if price else ""
+    lev = e.get("leverage")
+    lev_tag = f" · {lev}x" if lev else ""
     head = f"{'🔥 ' if is_large else ''}{tier_emoji} <b>{_esc(tier_name)}</b> · {_esc(name)}"
     # Only append the address chip when a custom label is set (otherwise the name
     # already is the short address and we'd show it twice).
@@ -164,7 +166,7 @@ def format_trade_alert(e: dict, wallet: Wallet, tier: tuple[str, str],
     lines = [
         f"{head}{addr_tag}",
         f"{side_emoji} {_esc(action)} <b>{_esc(coin)}</b> "
-        f"{_fmt2(amount)}（≈ {_usd2(value)}{price_str}）· {venue_tag}",
+        f"{_fmt2(amount)}（≈ {_usd2(value)}{price_str}）· {venue_tag}{lev_tag}",
     ]
     if pnl:
         sign = "+" if pnl >= 0 else ""

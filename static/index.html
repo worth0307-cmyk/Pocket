@@ -875,13 +875,13 @@ function coinRollup(list){
   const rows=Object.values(m).map(g=>{
     const p=pos[g.coin]; const pt=portMap[(g.coin||'').toUpperCase()];
     const avg = p ? p.entry_px : (g.buyAmt>0 ? g.buyVal/g.buyAmt : null);
-    let cur=null, posVal=null, upnl=null, isHL=false, side='';
-    if(p){ isHL=true; side=p.side; cur=(p.size? p.value_usd/Math.abs(p.size) : p.entry_px); posVal=p.value_usd; upnl=p.unrealized_pnl; }
+    let cur=null, posVal=null, upnl=null, isHL=false, side='', lev=null;
+    if(p){ isHL=true; side=p.side; lev=p.leverage||null; cur=(p.size? p.value_usd/Math.abs(p.size) : p.entry_px); posVal=p.value_usd; upnl=p.unrealized_pnl; }
     else if(pt){ cur=(pt.price!=null?pt.price:null); posVal=(pt.usd_value!=null?pt.usd_value:null);
       if(avg!=null && cur!=null && pt.amount) upnl=(cur-avg)*pt.amount; }  // EVM 浮盈估算=(现价-买入均价)×持仓
     if(cur==null && mids[g.coin]!=null) cur=mids[g.coin];  // 已平仓的币用盘口价兜底显示现价
     const venue = isHL ? 'HL' : (g.venue || (pt?pt.chain:'') || '');
-    return { coin:g.coin, buys:g.buys, sells:g.sells, net:g.buyAmt-g.sellAmt, realized:g.realized, avg, cur, posVal, upnl, isHL, side, venue };
+    return { coin:g.coin, buys:g.buys, sells:g.sells, net:g.buyAmt-g.sellAmt, realized:g.realized, avg, cur, posVal, upnl, isHL, side, lev, venue };
   });
   rows.sort((a,b)=> (Math.abs(b.posVal||0)+b.buys+b.sells) - (Math.abs(a.posVal||0)+a.buys+a.sells));
   return rows;
@@ -893,7 +893,7 @@ function renderTradeSummary(rows){
   let list=rows.slice();
   if(sumCoin) list=list.filter(r=>r.coin===sumCoin);
   if(sumSort){
-    const kf={trades:r=>r.buys+r.sells, net:r=>r.net, avg:r=>r.avg||0, cur:r=>r.cur||0, pos:r=>Math.abs(r.posVal||0), pct:r=>Math.abs(r.posVal||0), upnl:r=>r.upnl||0, realized:r=>r.realized||0}[sumSort];
+    const kf={trades:r=>r.buys+r.sells, net:r=>r.net, avg:r=>r.avg||0, cur:r=>r.cur||0, pos:r=>Math.abs(r.posVal||0), lev:r=>r.lev||0, pct:r=>Math.abs(r.posVal||0), upnl:r=>r.upnl||0, realized:r=>r.realized||0}[sumSort];
     if(kf) list.sort((a,b)=>{ const av=kf(a), bv=kf(b); return sumDir==="desc"?bv-av:av-bv; });
   }
   const coinSel=`<select class="th-filter" onchange="setSumCoin(this.value)"><option value="">全部</option>${coins.map(c=>`<option value="${esc(c)}" ${sumCoin===c?'selected':''}>${esc(c)}</option>`).join("")}</select>`;
@@ -910,6 +910,7 @@ function renderTradeSummary(rows){
       <td>${price(g.avg)}</td>
       <td>${price(g.cur)}</td>
       <td>${g.posVal!=null?(g.isHL?`<span class="${g.side==='多'?'pos':'neg'}">${g.side}</span> `:'')+usd(g.posVal):'—'}</td>
+      <td>${g.lev?`<span class="chip" title="当前持仓杠杆">${g.lev}x</span>`:'—'}</td>
       <td>${pctCell}</td>
       <td>${g.upnl!=null?`<span class="${g.upnl>=0?'pos':'neg'}">${(g.upnl>=0?'+':'')+usd(g.upnl)}</span>`:'—'}</td>
       <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td></tr>`;
@@ -917,7 +918,7 @@ function renderTradeSummary(rows){
   return `<div class="summary-block"><div class="summary-head">币种汇总</div>
     <div class="scroll-sm"><table><thead><tr>
       <th>币种 ${coinSel}</th><th>买/卖 ${ss('trades')}</th><th>净数量 ${ss('net')}</th><th>持仓均价 ${ss('avg')}</th>
-      <th>现价 ${ss('cur')}</th><th>持仓金额 ${ss('pos')}</th><th>占比 ${ss('pct')}</th><th>浮动盈亏 ${ss('upnl')}</th><th>已实现盈亏 ${ss('realized')}</th>
+      <th>现价 ${ss('cur')}</th><th>持仓金额 ${ss('pos')}</th><th title="该币当前持仓的杠杆设置">杠杆 ${ss('lev')}</th><th>占比 ${ss('pct')}</th><th>浮动盈亏 ${ss('upnl')}</th><th>已实现盈亏 ${ss('realized')}</th>
     </tr></thead><tbody>${trs}</tbody></table></div></div>`;
 }
 function tradeBadge(s){
@@ -947,6 +948,7 @@ function renderTrades(list, err, total){
 
   const selBox=(cur,onCh,items)=>`<select class="th-filter" onchange="${onCh}(this.value)"><option value="">全部</option>${items.map(t=>`<option value="${esc(t)}" ${cur===t?'selected':''}>${esc(t)}</option>`).join("")}</select>`;
   const sortBtn=(k)=>`<span class="th-sort ${sortKey===k?'on':''}" onclick="setSort('${k}')">${sortKey===k?(sortDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+  const levMap={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>{ if(p.leverage) levMap[p.coin]=p.leverage; });
 
   const rows=shown.map(s=>{
     const bd=tradeBadge(s);
@@ -954,9 +956,11 @@ function renderTrades(list, err, total){
       ? `<span class="chip" title="Hyperliquid 永续/现货成交">⚡HL</span>`
       : `<span class="chip">${(s.venue||s.chain||'').toUpperCase()}</span>`;
     const pnl = (s.closed_pnl!=null && s.closed_pnl!==0) ? ` · <span class="${s.closed_pnl>=0?'pos':'neg'}">${(s.closed_pnl>=0?'+':'')+usd(s.closed_pnl)}</span>` : '';
+    const lev = s.venue==='HL' ? (s.leverage||levMap[s.token_symbol]) : null;
     return `<tr>
       <td><span class="badge ${bd.c}">${bd.t}</span></td>
       <td><b>${esc(s.token_symbol)}</b> ${venueChip}</td>
+      <td>${lev?`<span class="chip" title="该币当前持仓的杠杆设置（HL 成交不含历史杠杆）">${lev}x</span>`:'—'}</td>
       <td class="amt-cell">${fmt(s.token_amount)}</td>
       <td>${price(s.price_usd)}</td>
       <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
@@ -964,13 +968,14 @@ function renderTrades(list, err, total){
       <td class="t-time" title="${ago(s.timestamp)}前">${fmtDate(s.timestamp)}</td>
       <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
   }).join("");
-  const truncNote = totalShown>500 ? `<tr><td colspan="8" class="note">已显示前 500 条（筛选后共 ${totalShown} 条），用「类型/币种」下拉可缩小范围。</td></tr>` : '';
-  const tbody = (rows ? rows+truncNote : `<tr><td colspan="8" class="note">无符合筛选的记录</td></tr>`);
+  const truncNote = totalShown>500 ? `<tr><td colspan="9" class="note">已显示前 500 条（筛选后共 ${totalShown} 条），用「类型/币种」下拉可缩小范围。</td></tr>` : '';
+  const tbody = (rows ? rows+truncNote : `<tr><td colspan="9" class="note">无符合筛选的记录</td></tr>`);
   const staleNote = (cache.hl && cache.hl.fills_stale && chainFilter!=='HL')
     ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 成交读取为空/超时，已沿用上次成功抓到的记录（更新于 ${ago(cache.hl.fills_as_of)}前）。点「刷新」重试。</div>` : '';
   return staleNote + `<div class="scroll-area"><table><thead><tr>
     <th>类型 ${selBox(typeFilter,'setTypeFilter',types)}</th>
     <th>币种/来源 ${selBox(coinFilter,'setCoinFilter',coins)}</th>
+    <th title="该币当前持仓的杠杆设置（HL 成交不含历史杠杆）">杠杆</th>
     <th>数量 ${sortBtn('amount')}</th>
     <th>价格 ${sortBtn('price')}</th>
     <th>金额(USD) ${sortBtn('value')}</th>
@@ -1226,7 +1231,7 @@ function anApplyTable(){
           <td class="${d.upnl>=0?'pos':'neg'}">${(d.upnl>=0?'+':'')+usd(d.upnl)}</td>
           <td style="color:var(--muted)">${pct}</td></tr>`;
       }).join("");
-      sub=`<tr class="an-sub"><td colspan="9"><div class="an-sub-box">
+      sub=`<tr class="an-sub"><td colspan="10"><div class="an-sub-box">
         <table><thead><tr><th>钱包</th><th>方向/杠杆</th><th>数量</th><th>名义价值</th><th>开仓均价</th><th>浮动盈亏</th><th title="占该币多空名义合计">占比</th></tr></thead>
         <tbody>${drows}</tbody></table></div></td></tr>`;
     }
@@ -1239,9 +1244,10 @@ function anApplyTable(){
       <td>${c.short_wallets?`<span class="neg">${c.short_wallets} 个 · ${usd(c.short_notional)}</span>`:'—'}</td>
       <td>${c.short_avg!=null?price(c.short_avg):'—'}</td>
       <td><span class="badge ${c.net_notional>=0?'b-open-long':'b-open-short'}">${c.net_notional>=0?'净多':'净空'}</span> <span style="color:var(--text)">${usd(Math.abs(c.net_notional))}</span></td>
+      <td>${c.long_lev?`<span class="pos">${(+c.long_lev).toFixed(1)}x</span>`:'—'} / ${c.short_lev?`<span class="neg">${(+c.short_lev).toFixed(1)}x</span>`:'—'}</td>
       <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`+sub;
   }).join("");
-  const tbody = rows || `<tr><td colspan="9" class="note">无符合筛选的记录</td></tr>`;
+  const tbody = rows || `<tr><td colspan="10" class="note">无符合筛选的记录</td></tr>`;
   wrap.innerHTML=`<table><thead><tr>
     <th>币种</th>
     <th>方向共识</th>
@@ -1251,6 +1257,7 @@ function anApplyTable(){
     <th>空头(钱包·名义) ${ss('shortN')}</th>
     <th>空头均价 ${ss('shortA')}</th>
     <th title="净敞口 = 多头名义 − 空头名义，只表示方向和规模，不是盈亏">净方向 ${ss('net')}</th>
+    <th title="多头/空头的名义加权平均杠杆">杠杆(多/空)</th>
     <th title="这些钱包在该币未平仓持仓的浮动盈亏合计（多空一起算），绿=赚 红=亏">合计浮盈 ${ss('upnl')}</th>
     </tr></thead><tbody>${tbody}</tbody></table>`;
   const btn=document.getElementById("anCoinBtn"); if(btn) btn.textContent=`多选筛选${anCoins.size?` · ${anCoins.size}`:''} ▾`;

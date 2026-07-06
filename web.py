@@ -391,7 +391,8 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         )
 
         def leg():
-            return {"n": 0, "notional": 0.0, "size": 0.0, "sxe": 0.0, "upnl": 0.0}
+            return {"n": 0, "notional": 0.0, "size": 0.0, "sxe": 0.0, "upnl": 0.0,
+                    "lxn": 0.0, "lev_n": 0.0}  # 杠杆×名义 累计（算名义加权平均杠杆）
 
         coins: dict = {}
         price_by_coin: dict = {}   # 现价：优先用持仓的标记价(仓位价值/数量)
@@ -425,6 +426,13 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 up = p.get("unrealized_pnl") or 0
                 lg["upnl"] += up
                 total_upnl += up
+                try:
+                    lev = float(p.get("leverage") or 0)
+                except (TypeError, ValueError):
+                    lev = 0.0
+                if lev and val:
+                    lg["lxn"] += lev * val
+                    lg["lev_n"] += val
                 details.setdefault(c, []).append({
                     "address": addr.lower(),
                     "side": p.get("side"),
@@ -445,8 +453,10 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 "cur_price": price_by_coin.get(c) or mids_all.get(c) or None,
                 "long_wallets": L["n"], "long_notional": L["notional"],
                 "long_avg": (L["sxe"] / L["size"]) if L["size"] else None,
+                "long_lev": (L["lxn"] / L["lev_n"]) if L["lev_n"] else None,
                 "short_wallets": S["n"], "short_notional": S["notional"],
                 "short_avg": (S["sxe"] / S["size"]) if S["size"] else None,
+                "short_lev": (S["lxn"] / S["lev_n"]) if S["lev_n"] else None,
                 "net_notional": L["notional"] - S["notional"],
                 "bias": ("一致做多" if S["n"] == 0 else
                          "一致做空" if L["n"] == 0 else "多空分歧"),

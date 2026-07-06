@@ -62,8 +62,16 @@ async def _wallet_events(wallet, config, http) -> tuple[list[dict], float]:
         try:  # Hyperliquid is keyless
             hl = await hyperliquid_state(http, addr, with_fills=True)
             total += hl.get("total_usd", 0) or 0
+            # 该币当前持仓的杠杆（HL 成交不含历史杠杆，推送里标当前设置）
+            levmap = {
+                p.get("coin"): p.get("leverage")
+                for p in hl.get("positions") or [] if p.get("leverage")
+            }
             for f in hl.get("fills", []) or []:
-                events.append({**f, "venue": f.get("venue") or "HL"})
+                events.append({
+                    **f, "venue": f.get("venue") or "HL",
+                    "leverage": levmap.get(f.get("token_symbol")),
+                })
         except Exception as exc:  # noqa: BLE001 - one source failing shouldn't kill the poll
             log.debug("HL poll %s failed: %s", addr, exc)
 
