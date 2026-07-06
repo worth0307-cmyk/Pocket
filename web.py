@@ -186,56 +186,73 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         地址要数分钟；这里服务端并发探测、每源限时，秒级返回。"""
         from chains.evm import is_evm_chain
         wallets = db.list_wallets()
-        sem = asyncio.Semaphore(6)
+        sem = asyncio.Semaphore(5)
 
         async def probe(w):
-            """返回 w 表示无交易；None 表示有交易或无法确认（保留）。"""
+            """返回 ("dead"|"active"|"unknown", w)。unknown=查询失败（保留并上报）。"""
             async with sem:
                 try:
                     if is_evm_chain(w.chain):
-                        try:  # HL 成交：一次限时探测，失败视为无法确认
-                            fills = await asyncio.wait_for(
-                                hl._user_fills(app.state.http, w.address, limit=1),
-                                timeout=30,
-                            )
-                        except Exception:  # noqa: BLE001
-                            return None
+                        addr = w.address.lower()
+                        # 先看服务端成交缓存：卡片刷新刚抓过的地址直接命中，
+                        # 不再打 HL（导入后立刻扫描时两波请求叠加会被 HL 限流）。
+                        cached = hl._fills_cache.get(addr)
+                        if cached and cached.get("fills"):
+                            return ("active", w)
+                        fills = None
+                        for attempt in range(2):  # 快探测；被限流时隔 2s 再试一次
+                            try:
+                                data = await hl._post(
+                                    app.state.http,
+                                    {"type": "userFills", "user": addr},
+                                    timeout=15,
+                                )
+                                fills = data if isinstance(data, list) else []
+                                break
+                            except Exception:  # noqa: BLE001
+                                if attempt == 0:
+                                    await asyncio.sleep(2)
+                        if fills is None:
+                            return ("unknown", w)
                         if fills:
-                            return None
+                            return ("active", w)
                         if config.moralis_api_key:
                             try:
                                 sw = await asyncio.wait_for(
                                     pf.evm_swaps(
                                         app.state.http, config.moralis_api_key,
-                                        w.address.lower(),
-                                        list(pf.DEFAULT_EVM_CHAINS), limit=1,
+                                        addr, list(pf.DEFAULT_EVM_CHAINS), limit=1,
                                     ),
                                     timeout=25,
                                 )
                             except Exception:  # noqa: BLE001
-                                return None
+                                return ("unknown", w)
                             if sw.get("swaps"):
-                                return None
-                        return w
+                                return ("active", w)
+                        return ("dead", w)
                     client = chains.get_client(w.chain, config, app.state.http)
                     if client is None:
-                        return None
+                        return ("unknown", w)
                     try:
                         actions = await asyncio.wait_for(
                             client.get_actions(w.address, limit=1), timeout=25
                         )
                     except Exception:  # noqa: BLE001
-                        return None
-                    return None if actions else w
+                        return ("unknown", w)
+                    return ("dead", w) if not actions else ("active", w)
                 except Exception:  # noqa: BLE001 - 任何异常都保留，绝不误删
-                    return None
+                    return ("unknown", w)
 
         res = await asyncio.gather(*[probe(w) for w in wallets])
         inactive = [
             {"id": w.id, "chain": w.chain, "address": w.address, "label": w.label}
-            for w in res if w is not None
+            for status, w in res if status == "dead"
         ]
-        return {"inactive": inactive, "checked": len(wallets)}
+        unverified = sum(1 for status, _ in res if status == "unknown")
+        return {
+            "inactive": inactive, "checked": len(wallets),
+            "unverified": unverified,
+        }
 
     @app.post("/api/wallets/{wallet_id}/move")
     async def api_move(

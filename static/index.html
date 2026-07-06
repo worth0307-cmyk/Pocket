@@ -1080,10 +1080,16 @@ async function purgeInactive(){
   catch(e){ return toast("扫描失败："+e.message); }
   finally{ if(btn){ btn.disabled=false; btn.textContent="清理无交易"; } }
   const dead=r.inactive||[];
-  if(!dead.length) return toast(`已检查 ${r.checked} 个地址，未发现无交易记录的`);
+  const unv=r.unverified||0;
+  if(!dead.length){
+    return toast(unv>0
+      ? `已检查 ${r.checked} 个：${unv} 个查询失败已保留（可能刚被限流，等半分钟再点一次）`
+      : `已检查 ${r.checked} 个地址，未发现无交易记录的`);
+  }
   const names=dead.slice(0,15).map(w=>(w.label?w.label+" ":"")+shortAddr(w.address,8,6)).join("\n");
   const more=dead.length>15?`\n…等共 ${dead.length} 个`:"";
-  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？\n（查询失败的已自动保留，不会误删）\n${names}${more}`)) return;
+  const unvNote=unv>0?`\n（另有 ${unv} 个查询失败已保留，稍后可再扫一次）`:"";
+  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？${unvNote}\n${names}${more}`)) return;
   let n=0; for(const w of dead){ try{ await api("/api/wallets/"+w.id,{method:"DELETE"}); n++; }catch(e){} }
   toast(`已移除 ${n} 个无交易记录的地址`);
   await loadWallets();
