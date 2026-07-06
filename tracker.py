@@ -27,6 +27,10 @@ log = logging.getLogger("tracker")
 
 EVM_CHAINS = {"eth", "bsc", "base", "arb", "polygon", "op"}
 
+# 每地址每币最后见到的杠杆。仓位平掉后持仓里就没杠杆了，
+# 靠这个记忆让「平仓」推送也能带上杠杆（重启后清空，可接受）。
+_lev_memory: dict[str, dict] = {}
+
 
 def _tier(usd: float) -> tuple[str, str]:
     usd = usd or 0
@@ -62,15 +66,16 @@ async def _wallet_events(wallet, config, http) -> tuple[list[dict], float]:
         try:  # Hyperliquid is keyless
             hl = await hyperliquid_state(http, addr, with_fills=True)
             total += hl.get("total_usd", 0) or 0
-            # 该币当前持仓的杠杆（HL 成交不含历史杠杆，推送里标当前设置）
-            levmap = {
-                p.get("coin"): p.get("leverage")
-                for p in hl.get("positions") or [] if p.get("leverage")
-            }
+            # 该币当前持仓的杠杆（HL 成交不含历史杠杆，推送里标当前设置）。
+            # 平仓后持仓里已无该币，用上次轮询记住的杠杆兜底。
+            remembered = _lev_memory.setdefault(addr.lower(), {})
+            for p in hl.get("positions") or []:
+                if p.get("leverage"):
+                    remembered[p.get("coin")] = p.get("leverage")
             for f in hl.get("fills", []) or []:
                 events.append({
                     **f, "venue": f.get("venue") or "HL",
-                    "leverage": levmap.get(f.get("token_symbol")),
+                    "leverage": remembered.get(f.get("token_symbol")),
                 })
         except Exception as exc:  # noqa: BLE001 - one source failing shouldn't kill the poll
             log.debug("HL poll %s failed: %s", addr, exc)
