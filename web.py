@@ -396,9 +396,10 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
         coins: dict = {}
         price_by_coin: dict = {}   # 现价：优先用持仓的标记价(仓位价值/数量)
         mids_all: dict = {}        # 盘口中间价兜底
+        details: dict = {}         # 每个币 -> 各钱包仓位明细（点击行展开用）
         total_acct = total_upnl = 0.0
         with_pos = 0
-        for st in states:
+        for addr, st in zip(addrs, states):
             if not isinstance(st, dict):
                 continue
             total_acct += st.get("account_value", 0) or 0
@@ -424,6 +425,17 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 up = p.get("unrealized_pnl") or 0
                 lg["upnl"] += up
                 total_upnl += up
+                details.setdefault(c, []).append({
+                    "address": addr.lower(),
+                    "side": p.get("side"),
+                    "leverage": p.get("leverage"),
+                    "size": sz,
+                    "notional": val,
+                    "entry_px": p.get("entry_px"),
+                    "upnl": up,
+                })
+        for lst in details.values():  # 多头在前、空头在后，各按名义降序
+            lst.sort(key=lambda d: (d["side"] != "多", -d["notional"]))
 
         out = []
         for c, g in coins.items():
@@ -439,6 +451,7 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
                 "bias": ("一致做多" if S["n"] == 0 else
                          "一致做空" if L["n"] == 0 else "多空分歧"),
                 "upnl": L["upnl"] + S["upnl"],
+                "wallets": details.get(c, []),
             })
         out.sort(key=lambda x: x["long_notional"] + x["short_notional"], reverse=True)
         return {

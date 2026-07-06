@@ -196,6 +196,16 @@
   .an-fl { display: flex; align-items: center; gap: 8px; }
   .an-fl-k { font-size: 12px; color: var(--muted); font-weight: 700; }
   .an-cats { display: flex; flex-wrap: wrap; gap: 5px; }
+  .an-row { cursor: pointer; }
+  .an-row:hover td { background: #fafbfd; }
+  .an-row.open td { background: var(--accent-soft); }
+  .an-caret { color: var(--muted-2); font-size: 11px; }
+  .an-sub > td { padding: 0 !important; background: #fafbfd; }
+  .an-sub-box { padding: 6px 14px 12px 30px; }
+  .an-sub-box table { font-size: 12.5px; }
+  .an-sub-box th { background: transparent !important; position: static !important; }
+  .an-wlink { color: var(--accent); font-weight: 700; cursor: pointer; }
+  .an-wlink:hover { text-decoration: underline; }
   .chip-c { cursor: pointer; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 999px; background: #f1f2f5; color: var(--muted); border: 1px solid transparent; }
   .chip-c:hover { color: var(--accent); }
   .chip-c.on { background: var(--accent-soft); color: var(--accent); border-color: #ffd9cc; }
@@ -313,6 +323,7 @@ let walletList = [];          // 当前跟踪清单（供全选/导出/清理复
 let inAnalysis = false, analysisData = null;                          // 分析模块视图状态
 let anBias = "", anSort = "", anDir = "desc";                         // 分析表格方向筛选/排序
 let anCat = "", anCoins = new Set(), anMenuOpen = false;              // 分析分类筛选 + 币种多选
+let anOpenCoin = "";                                                  // 分析表展开明细的币种（点击行切换）
 
 // 币种归类：加密 / 股票 / 期货 / 其它。
 // HL 主永续全是加密(无冒号前缀)；股票/商品/指数多为 builder 子交易所(dex:SYM)。
@@ -1126,7 +1137,7 @@ function closeAnalysis(){
 }
 async function analyzeSelected(){
   if(!analysisSet.size) return toast("请先勾选钱包（卡片左侧勾选框）");
-  inAnalysis=true; analysisData=null; anCat=""; anCoins=new Set(); anMenuOpen=false; anBias=""; anSort=""; anDir="desc"; stopTimer();
+  inAnalysis=true; analysisData=null; anCat=""; anCoins=new Set(); anMenuOpen=false; anBias=""; anSort=""; anDir="desc"; anOpenCoin=""; stopTimer();
   document.querySelectorAll('.wcard').forEach(el=>el.classList.remove('active'));
   document.getElementById("detail").innerHTML=anHeadHTML(`已选 ${analysisSet.size} 个钱包`)+'<div class="spinner">分析中…（读取各钱包 Hyperliquid 持仓）</div>';
   syncListHeight();
@@ -1144,6 +1155,12 @@ function anSelectAllCoins(){ anCoins=new Set(anVisibleCoins()); anMenuOpen=true;
 function anClearCoins(){ anCoins=new Set(); anMenuOpen=true; renderAnalysisPanel(); }
 function setAnBias(v){ anBias=v; anApplyTable(); }
 function setAnSort(k){ if(anSort===k){ anDir = anDir==="desc"?"asc":"desc"; } else { anSort=k; anDir="desc"; } anApplyTable(); }
+function anToggleDetail(coin){ anOpenCoin = anOpenCoin===coin ? "" : coin; anApplyTable(); }
+function anJumpWallet(addr){  // 从分析明细跳到该钱包详情
+  const w=walletList.find(x=>(x.address||'').toLowerCase()===(addr||'').toLowerCase());
+  if(!w) return toast("该地址不在跟踪清单中");
+  selectWallet(w);  // 会自动退出分析视图
+}
 function renderAnalysisPanel(){
   const d=analysisData; if(!d) return;
   const head=anHeadHTML(`${d.wallets} 个钱包 · ${d.with_positions} 个有持仓`)+`<div class="stats">
@@ -1191,8 +1208,30 @@ function anApplyTable(){
   const rows=list.map(c=>{
     const badge=c.bias==='一致做多'?'b-open-long':c.bias==='一致做空'?'b-open-short':'b-SWAP';
     const cn=coinCN(c.coin);
-    return `<tr>
-      <td><b>${esc(c.coin)}</b>${cn?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(cn)}</span>`:''}</td>
+    const open=anOpenCoin===c.coin;
+    let sub="";
+    if(open && (c.wallets||[]).length){
+      const tot=(c.long_notional||0)+(c.short_notional||0);
+      const drows=c.wallets.map(d=>{
+        const w=walletList.find(x=>(x.address||'').toLowerCase()===d.address);
+        const nm=customNames[d.address]||(w&&w.label)||shortAddr(d.address,8,6);
+        const pct=tot>0?(d.notional/tot*100).toFixed(1)+'%':'—';
+        return `<tr>
+          <td><span class="an-wlink" title="打开该钱包详情" onclick="event.stopPropagation();anJumpWallet('${d.address}')">${esc(nm)}</span>
+            <span class="mono" style="color:var(--muted-2);font-size:11px">${shortAddr(d.address,6,4)}</span></td>
+          <td><span class="badge ${d.side==='多'?'b-BUY':'b-SELL'}">${d.side}${d.leverage?` ${d.leverage}x`:''}</span></td>
+          <td>${fmt(d.size)}</td>
+          <td class="amt-cell">${usd(d.notional)}</td>
+          <td>${d.entry_px!=null?price(d.entry_px):'—'}</td>
+          <td class="${d.upnl>=0?'pos':'neg'}">${(d.upnl>=0?'+':'')+usd(d.upnl)}</td>
+          <td style="color:var(--muted)">${pct}</td></tr>`;
+      }).join("");
+      sub=`<tr class="an-sub"><td colspan="9"><div class="an-sub-box">
+        <table><thead><tr><th>钱包</th><th>方向/杠杆</th><th>数量</th><th>名义价值</th><th>开仓均价</th><th>浮动盈亏</th><th title="占该币多空名义合计">占比</th></tr></thead>
+        <tbody>${drows}</tbody></table></div></td></tr>`;
+    }
+    return `<tr class="an-row ${open?'open':''}" onclick="anToggleDetail('${esc(c.coin)}')" title="点击${open?'收起':'展开'}各钱包明细">
+      <td><span class="an-caret">${open?'▾':'▸'}</span> <b>${esc(c.coin)}</b>${cn?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(cn)}</span>`:''}</td>
       <td><span class="badge ${badge}">${esc(c.bias)}</span></td>
       <td>${c.cur_price!=null?price(c.cur_price):'—'}</td>
       <td>${c.long_wallets?`<span class="pos">${c.long_wallets} 个 · ${usd(c.long_notional)}</span>`:'—'}</td>
@@ -1200,7 +1239,7 @@ function anApplyTable(){
       <td>${c.short_wallets?`<span class="neg">${c.short_wallets} 个 · ${usd(c.short_notional)}</span>`:'—'}</td>
       <td>${c.short_avg!=null?price(c.short_avg):'—'}</td>
       <td><span class="badge ${c.net_notional>=0?'b-open-long':'b-open-short'}">${c.net_notional>=0?'净多':'净空'}</span> <span style="color:var(--text)">${usd(Math.abs(c.net_notional))}</span></td>
-      <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`;
+      <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`+sub;
   }).join("");
   const tbody = rows || `<tr><td colspan="9" class="note">无符合筛选的记录</td></tr>`;
   wrap.innerHTML=`<table><thead><tr>
