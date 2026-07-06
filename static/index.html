@@ -71,6 +71,8 @@
   .wdel:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
   .wmove { position: absolute; bottom: 6px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
   .wcard:hover .wmove { opacity: 1; }
+  /* 触屏设备没有 hover：删除/置顶/上下移常显，否则永远点不到 */
+  @media (hover: none) { .wdel, .wmove { opacity: .85; } }
   .wmove span { width: 22px; height: 20px; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--border);
     border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; user-select: none; }
   .wmove span:hover { color: var(--accent); border-color: var(--accent-2); }
@@ -252,7 +254,7 @@
           </select>
           <button class="tool-btn" onclick="triggerImport()">导入</button>
           <button class="tool-btn need-wallets" onclick="exportWallets()">导出</button>
-          <button class="tool-btn danger need-wallets" onclick="purgeInactive()" title="并行扫描并移除没有任何买卖/动作记录的地址">清理无交易</button>
+          <button class="tool-btn danger need-wallets" id="purgeBtn" onclick="purgeInactive()" title="并行扫描并移除没有任何买卖/动作记录的地址">清理无交易</button>
           <button class="tool-btn danger need-wallets" id="clearBtn" onclick="clearAllWallets()" title="删除勾选的地址（全选后可清空全部）">清空选中</button>
           <input type="file" id="importFile" accept=".json,.txt,.csv" style="display:none" onchange="importWallets(this)">
         </div>
@@ -551,7 +553,7 @@ async function fillCard(w){
     if(EVM_CHAINS.includes(w.chain)){
       let total=0, have=false, upnl=0, pnlType='';
       if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
-      try{ const hh=await api(`/api/hyperliquid?address=${w.address}&fills=1`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; }
+      try{ const hh=await api(`/api/hyperliquid?address=${w.address}&fills=1&summary=1`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; }
         if(hh.unrealized_pnl){ upnl=hh.unrealized_pnl; pnlType='浮'; } else if(hh.realized_pnl){ upnl=hh.realized_pnl; pnlType='实'; } } }catch(e){}
       let text, usdVal=have?total:null;
       if(have){ text=usd(total); el.textContent=text; }
@@ -1069,13 +1071,19 @@ async function importWallets(input){
 }
 async function purgeInactive(){
   if(!walletList.length) return toast("清单为空");
+  const btn=document.getElementById("purgeBtn");
+  if(btn && btn.disabled) return;             // 防连点重复扫描
+  if(btn){ btn.disabled=true; btn.textContent="扫描中…"; }
   toast("正在并行扫描无交易地址…");
   let r;
   try{ r=await api("/api/wallets/scan_inactive",{method:"POST"}); }
   catch(e){ return toast("扫描失败："+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent="清理无交易"; } }
   const dead=r.inactive||[];
   if(!dead.length) return toast(`已检查 ${r.checked} 个地址，未发现无交易记录的`);
-  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？\n（查询失败的已自动保留，不会误删）\n${dead.map(w=>(w.label?w.label+" ":"")+shortAddr(w.address,8,6)).join("\n")}`)) return;
+  const names=dead.slice(0,15).map(w=>(w.label?w.label+" ":"")+shortAddr(w.address,8,6)).join("\n");
+  const more=dead.length>15?`\n…等共 ${dead.length} 个`:"";
+  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？\n（查询失败的已自动保留，不会误删）\n${names}${more}`)) return;
   let n=0; for(const w of dead){ try{ await api("/api/wallets/"+w.id,{method:"DELETE"}); n++; }catch(e){} }
   toast(`已移除 ${n} 个无交易记录的地址`);
   await loadWallets();

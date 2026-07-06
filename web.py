@@ -481,17 +481,23 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
 
     @app.get("/api/hyperliquid")
     async def api_hyperliquid(
-        address: str, fills: int = 0, _: None = Depends(auth)
+        address: str, fills: int = 0, summary: int = 0, _: None = Depends(auth)
     ) -> dict:
         from chains.evm import _ADDR_RE
         if not _ADDR_RE.match(address.strip()):
             raise HTTPException(status_code=400, detail="地址格式不正确")
         try:
-            return await hl.hyperliquid_state(
+            state = await hl.hyperliquid_state(
                 app.state.http, address, with_fills=bool(fills)
             )
         except ChainError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
+        if summary:
+            # 卡片总值/盈亏只要几个数字：剥掉 fills/mids/positions/spot 大数组，
+            # 响应从几百 KB 降到 ~1KB（大户成交列表很大，别为一张卡片全量下发）。
+            state = {k: v for k, v in state.items()
+                     if k not in ("fills", "mids", "positions", "spot")}
+        return state
 
     @app.get("/api/swaps")
     async def api_swaps(
