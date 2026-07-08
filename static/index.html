@@ -3,296 +3,1431 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wallet Tracker</title>
+<title>Pocket · 链上钱包跟踪</title>
 <style>
   :root {
-    --bg: #0a0b0d;
-    --panel: #111316;
-    --panel-2: #15181c;
-    --border: #1f242b;
-    --text: #e7eaf0;
-    --muted: #8b929e;
-    --accent: #00d2a8;
-    --buy: #2ecc71;
-    --sell: #ff5d5d;
-    --swap: #c792ea;
-    --in: #4aa3ff;
-    --out: #ffb454;
+    --bg: #f5f6fa; --card: #fff; --border: #ececf1; --text: #13141a; --muted: #82838f; --muted-2: #aeb0ba;
+    --accent: #ff6034; --accent-2: #ff8a5b; --accent-soft: #fff1ec; --green: #2ebd85; --red: #e8534b;
+    --swap: #8b5cf6; --blue: #3b82f6; --orange: #f5a623; --shadow: 0 1px 2px rgba(20,21,26,.04), 0 10px 30px rgba(20,21,26,.06);
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: radial-gradient(1200px 600px at 80% -10%, #0e1418 0%, var(--bg) 60%);
-    color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-    min-height: 100vh;
-  }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; min-height: 100vh; }
   a { color: var(--accent); text-decoration: none; }
-  code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
-
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px; border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; background: rgba(10,11,13,.85);
-    backdrop-filter: blur(8px); z-index: 5;
+  code, .mono { font-family: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 26px; height: 62px;
+    display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -.2px; }
+  .logo .mark { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center; color: #fff; font-weight: 900; box-shadow: 0 4px 12px rgba(255,96,52,.35); }
+  .logo small { color: var(--muted); font-weight: 500; font-size: 12px; }
+  header .hint { color: var(--muted); font-size: 12px; }
+  .container { max-width: none; margin: 0 auto; padding: 22px 24px 60px; }  /* 吃满全宽，留白让给内容 */
+  .hero { margin-bottom: 24px; }
+  .search { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
+    padding: 10px 10px 10px 18px; display: flex; align-items: center; gap: 12px; }
+  .search .ic { color: var(--muted-2); font-size: 18px; }
+  .search input { flex: 1; height: 46px; border: none; outline: none; background: transparent; font-size: 15px; color: var(--text); }
+  .search input::placeholder { color: var(--muted-2); }
+  .detect { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 8px; white-space: nowrap; background: #f0f1f4; color: var(--muted); }
+  .detect.ok { background: var(--accent-soft); color: var(--accent); }
+  button { height: 46px; padding: 0 20px; border: none; border-radius: 11px; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; box-shadow: 0 6px 16px rgba(255,96,52,.28); }
+  .btn-primary:hover { filter: brightness(1.04); }
+  .btn-ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .hint-line { color: var(--orange); font-size: 12.5px; margin: 9px 4px 0; min-height: 16px; }
+  .grid { display: grid; grid-template-columns: 430px minmax(0, 1fr); gap: 24px; align-items: start; }  /* 清单列拉宽 */
+  @media (max-width: 1280px) { .grid { grid-template-columns: 350px minmax(0, 1fr); } }
+  @media (max-width: 920px) { .grid { grid-template-columns: minmax(0, 1fr); } }  /* minmax(0,·)：别让宽表格把单列撑爆 */
+  /* 移动端适配：搜索栏换行、收紧留白、详情头允许换行、隐藏次要信息 */
+  @media (max-width: 700px) {
+    .container { padding: 14px 12px 40px; }
+    header { padding: 0 14px; height: auto; min-height: 54px; flex-wrap: wrap; }
+    header .hint { display: none; }
+    .logo small { display: none; }
+    .search { flex-wrap: wrap; padding: 10px 12px; }
+    .search input { flex: 1 1 100%; height: 40px; order: -1; }
+    .search .detect { font-size: 11px; }
+    .search button { height: 38px; padding: 0 14px; flex: 1; }
+    .det-head { flex-wrap: wrap; padding: 14px; }
+    .det-head .total { text-align: left; width: 100%; }
+    .det-head .total .big { font-size: 22px; }
+    .tabs { flex-wrap: wrap; padding: 10px 12px 0; }
+    .tabbar-right { flex-wrap: wrap; margin-left: 0; row-gap: 4px; }
+    .stat { padding: 12px; } .stat .v { font-size: 16px; }
+    .modal-bg { padding: 12px 6px; }
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
-  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
-    box-shadow: 0 0 12px var(--accent); }
-  .brand small { color: var(--muted); font-weight: 400; letter-spacing: 0; }
-
-  .wrap { display: grid; grid-template-columns: 340px 1fr; gap: 20px; padding: 20px 24px; max-width: 1320px; margin: 0 auto; }
-  @media (max-width: 880px) { .wrap { grid-template-columns: 1fr; } }
-
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
-  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
-    margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-  .panel .body { padding: 14px 16px; }
-
-  input, select, button, textarea { font: inherit; color: var(--text); }
-  input, select {
-    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 9px; padding: 9px 11px; outline: none;
-  }
-  input:focus, select:focus { border-color: var(--accent); }
-  label.fld { display: block; margin-bottom: 10px; }
-  label.fld span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-  .row { display: flex; gap: 8px; }
-  .row > * { flex: 1; }
-  button {
-    background: var(--accent); color: #04201a; border: none; border-radius: 9px;
-    padding: 9px 14px; font-weight: 700; cursor: pointer;
-  }
-  button:hover { filter: brightness(1.08); }
-  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-  button.ghost:hover { color: var(--text); border-color: var(--accent); }
-  button.danger { background: transparent; color: var(--sell); border: 1px solid #3a2326; padding: 4px 9px; font-size: 12px; }
-
-  .wallet { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer;
-    border: 1px solid transparent; }
-  .wallet:hover { background: var(--panel-2); }
-  .wallet.active { background: var(--panel-2); border-color: var(--accent); }
-  .chip { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; text-transform: uppercase;
-    background: #1b2026; color: var(--accent); letter-spacing: .5px; }
-  .wallet .meta { flex: 1; min-width: 0; }
-  .wallet .meta .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wallet .meta .ad { color: var(--muted); font-size: 12px; }
-
-  .empty { color: var(--muted); text-align: center; padding: 26px 10px; }
-
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-  .stat .k { color: var(--muted); font-size: 12px; }
-  .stat .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
-  .stat .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
-
+  .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px;
+    margin: 4px 2px 12px; display: flex; justify-content: space-between; }
+  .section-title .count { color: var(--accent); }
+  .wcard { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex;
+    align-items: center; gap: 12px; cursor: pointer; margin-bottom: 12px; box-shadow: var(--shadow); transition: border-color .15s; }
+  .wcard:hover { border-color: var(--accent-2); }
+  .wdel { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+    color: var(--muted-2); background: #fff; border: 1px solid var(--border); cursor: pointer; opacity: 0; transition: opacity .12s, color .12s, border-color .12s; }
+  .wcard:hover .wdel { opacity: 1; }
+  .wdel:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
+  .wmove { position: absolute; bottom: 6px; right: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+  .wcard:hover .wmove { opacity: 1; }
+  /* 触屏设备没有 hover：删除/置顶/上下移常显，否则永远点不到 */
+  @media (hover: none) { .wdel, .wmove { opacity: .85; } }
+  .wmove span { width: 22px; height: 20px; display: grid; place-items: center; font-size: 12px; border: 1px solid var(--border);
+    border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; user-select: none; }
+  .wmove span:hover { color: var(--accent); border-color: var(--accent-2); }
+  .wmove span.on { color: var(--accent); border-color: #ffd9cc; background: var(--accent-soft); }
+  .pin-mark { font-size: 11px; }
+  .wcard.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .avatar { width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; position: relative; }
+  .wbadge { position: absolute; top: -5px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+    background: #fa5151; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+    border: 2px solid var(--card); box-sizing: content-box; z-index: 2; }
+  .wcard .info { flex: 1; min-width: 0; }
+  .wcard .info .nm { font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .wcard .info .ad { color: var(--muted); font-size: 12px; }
+  .wcard .bal { text-align: right; }
+  .wcard .bal .v { font-weight: 800; }
+  .wcard .bal .s { color: var(--muted); font-size: 11px; }
+  .chip { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); letter-spacing: .4px; }
+  .tier { font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .tier-whale { background: #ece4ff; color: #6b3fd4; }
+  .tier-superwhale { background: #dcecff; color: #2563eb; }
+  .tier-shark { background: #ffe6d6; color: #e0640f; }
+  .tier-dolphin { background: #d5f1fb; color: #0e86c4; }
+  .tier-fish { background: #e2f6e8; color: #1f9d57; }
+  .tier-shrimp { background: #f0f1f4; color: #82838f; }
+  .x { margin-left: 6px; color: var(--muted-2); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+  .x:hover { color: var(--red); background: #fdecec; }
+  .empty { color: var(--muted); text-align: center; padding: 30px 12px; background: var(--card); border: 1px dashed var(--border); border-radius: 14px; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+  .det-head { display: flex; align-items: center; gap: 14px; padding: 20px; border-bottom: 1px solid var(--border); }
+  .det-head .info { flex: 1; min-width: 0; }
+  .det-head .nm { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .det-head .ad { color: var(--muted); font-size: 12.5px; word-break: break-all; }
+  .copy-ic { cursor: pointer; color: var(--muted-2); margin-left: 6px; display: inline-flex; vertical-align: middle; }
+  .copy-ic:hover { color: var(--accent); }
+  .edit-ic { cursor: pointer; color: var(--muted-2); margin-left: 6px; display: inline-flex; vertical-align: middle; }
+  .edit-ic:hover { color: var(--accent); }
+  .det-head .total { text-align: right; }
+  .det-head .total .big { font-size: 26px; font-weight: 800; letter-spacing: -.5px; }
+  .det-head .total .sub { font-size: 12px; color: var(--muted); }
+  .chain-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fafbfd; align-items: center; }
+  .chain-tab { font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 8px; cursor: pointer; color: var(--muted); border: 1px solid var(--border); background: #fff; }
+  .chain-tab:hover { border-color: var(--accent-2); color: var(--accent); }
+  .chain-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .chain-tab .u { font-weight: 800; margin-left: 4px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--border); }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat { background: var(--card); padding: 16px 18px; min-width: 0; }
+  .stat .v { overflow-wrap: anywhere; }
+  .stat .k { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .stat .v { font-size: 20px; font-weight: 800; margin-top: 3px; }
+  .stat .v small { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .help { color: var(--muted-2); cursor: help; border: 1px solid var(--border); border-radius: 50%; width: 14px; height: 14px; display: inline-grid; place-items: center; font-size: 10px; }
+  .tabs { display: flex; gap: 4px; padding: 12px 18px 0; border-bottom: 1px solid var(--border); }
+  .tab { padding: 9px 14px; font-weight: 700; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tabbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; padding-bottom: 8px; color: var(--muted); font-size: 12px; }
+  .switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .refresh-btn { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
-    padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  td { padding: 11px 12px; border-bottom: 1px solid #15191e; vertical-align: middle; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 10px 18px; border-bottom: 1px solid var(--border); font-weight: 700; }
+  td { padding: 13px 18px; border-bottom: 1px solid #f3f4f7; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #0f1216; }
-  .badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; white-space: nowrap; }
-  .b-BUY { color: var(--buy); background: rgba(46,204,113,.12); }
-  .b-SELL { color: var(--sell); background: rgba(255,93,93,.12); }
-  .b-SWAP { color: var(--swap); background: rgba(199,146,234,.12); }
-  .b-TRANSFER_IN { color: var(--in); background: rgba(74,163,255,.12); }
-  .b-TRANSFER_OUT { color: var(--out); background: rgba(255,180,84,.12); }
-  .b-OTHER { color: var(--muted); background: #1a1e24; }
+  tr:hover td { background: #fafafd; }
+  .badge { font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; white-space: nowrap; }
+  .b-BUY { color: var(--green); background: rgba(46,189,133,.12); }
+  .b-SELL { color: var(--red); background: rgba(232,83,75,.12); }
+  .b-SWAP { color: var(--swap); background: rgba(139,92,246,.12); }
+  .b-TRANSFER_IN { color: var(--blue); background: rgba(59,130,246,.12); }
+  .b-TRANSFER_OUT { color: var(--orange); background: rgba(245,166,35,.14); }
+  .b-OTHER { color: var(--muted); background: #f0f1f4; }
+  .b-open-long { color: var(--green); background: rgba(46,189,133,.12); }
+  .b-close-long { color: var(--orange); background: rgba(245,166,35,.16); }
+  .b-open-short { color: var(--red); background: rgba(232,83,75,.12); }
+  .b-close-short { color: var(--blue); background: rgba(59,130,246,.12); }
+  .usd { color: var(--muted); font-weight: 600; }
+  .amt-cell { font-weight: 700; white-space: nowrap; }
   .t-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .token-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #15191e; }
-  .token-row:last-child { border-bottom: none; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
-  .spinner { color: var(--muted); padding: 24px; text-align: center; }
-  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: var(--panel-2); border: 1px solid var(--border); padding: 10px 16px; border-radius: 10px;
-    opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .pf-row { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid #f3f4f7; }
+  .pf-row:last-child { border-bottom: none; }
+  .coin { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 11px; flex: 0 0 32px; }
+  .pf-row .sym { font-weight: 700; flex: 1; min-width: 0; }
+  .pf-row .sym .sub2 { color: var(--muted); font-size: 12px; font-weight: 500; }
+  .pf-row .amt { text-align: right; }
+  .pf-row .amt .v { font-weight: 800; }
+  .pf-row .amt .u { color: var(--muted); font-size: 12px; }
+  .summary-block { border-bottom: 8px solid var(--bg); }
+  .summary-head { padding: 11px 18px; font-weight: 700; color: var(--muted); font-size: 12px; letter-spacing: .4px; background: #fafbfd; border-bottom: 1px solid var(--border); }
+  .hl-block { border-bottom: 8px solid var(--bg); }
+  .hl-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 18px; font-weight: 800; background: #eefaf6; border-bottom: 1px solid var(--border); }
+  .hl-head .hl-val { color: var(--muted); font-weight: 700; font-size: 13px; }
+  .th-filter { font: inherit; font-size: 11px; padding: 1px 3px; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--muted); cursor: pointer; margin-left: 3px; max-width: 88px; vertical-align: middle; }
+  .th-sort { cursor: pointer; color: var(--muted-2); margin-left: 4px; user-select: none; font-size: 12px; }
+  .th-sort:hover, .th-sort.on { color: var(--accent); }
+  .scroll-area { max-height: 520px; overflow: auto; }
+  .scroll-sm { max-height: 340px; overflow: auto; }
+  #walletList { padding-right: 2px; }
+  .scroll-area th, .scroll-sm th { position: sticky; top: 0; background: #fff; z-index: 1; }
+  .note { color: var(--muted); font-size: 12.5px; padding: 16px 18px; }
+  .spinner { color: var(--muted); padding: 26px; text-align: center; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(20,21,26,.45); display: none; align-items: flex-start; justify-content: center; z-index: 100; padding: 40px 16px; }
+  .modal-bg.show { display: flex; }
+  .modal { background: #fff; border-radius: 16px; box-shadow: var(--shadow); width: 100%; max-width: 1180px; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 800; }
+  .modal-head .ctrls { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+  .modal-body { overflow: auto; }
+  .modal-body table { width: 100%; }
+  .modal-body th { position: sticky; top: 0; background: #fff; z-index: 1; }
+  .modal-foot { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-top: 1px solid var(--border); }
+  .lb-h { cursor: pointer; user-select: none; white-space: nowrap; }
+  .lb-h:hover, .lb-h.on { color: var(--accent); }
+  .lb-clear { background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .lb-clear:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
+  .an-btn { background: var(--accent-soft); color: var(--accent); border: 1px solid #ffd9cc; border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .an-btn:hover { filter: brightness(.97); }
+  .wsel { width: 16px; height: 16px; cursor: pointer; flex: 0 0 auto; accent-color: var(--accent); }
+  .list-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 2px 12px; }
+  .tool-btn { background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; height: 28px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .tool-btn:hover { color: var(--accent); border-color: var(--accent-2); }
+  .tool-btn.danger:hover { color: var(--red); border-color: #f3b4b4; background: #fdecec; }
+  .an-filter { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+  .an-fl { display: flex; align-items: center; gap: 8px; }
+  .an-fl-k { font-size: 12px; color: var(--muted); font-weight: 700; }
+  .an-cats { display: flex; flex-wrap: wrap; gap: 5px; }
+  .an-row { cursor: pointer; }
+  .an-row:hover td { background: #fafbfd; }
+  .an-row.open td { background: var(--accent-soft); }
+  .an-caret { color: var(--muted-2); font-size: 11px; }
+  .an-sub > td { padding: 0 !important; background: #fafbfd; }
+  .an-sub-box { padding: 6px 14px 12px 30px; }
+  .an-sub-box table { font-size: 12.5px; }
+  .an-sub-box th { background: transparent !important; position: static !important; }
+  .an-wlink { color: var(--accent); font-weight: 700; cursor: pointer; }
+  .an-wlink:hover { text-decoration: underline; }
+  .chip-c { cursor: pointer; font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 999px; background: #f1f2f5; color: var(--muted); border: 1px solid transparent; }
+  .chip-c:hover { color: var(--accent); }
+  .chip-c.on { background: var(--accent-soft); color: var(--accent); border-color: #ffd9cc; }
+  .th-multi { position: relative; display: inline-block; }
+  .th-btn { display: inline-block; font-size: 12px; font-weight: 700; color: var(--muted); background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; user-select: none; }
+  .th-btn:hover { color: var(--accent); border-color: var(--accent-2); }
+  .th-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 8px; min-width: 190px; max-height: 300px; overflow: auto; }
+  .th-menu .cat-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .th-menu .cat-row span { cursor: pointer; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #f1f2f5; color: var(--muted); }
+  .th-menu .cat-row span:hover { background: var(--accent-soft); color: var(--accent); }
+  .th-menu .mg { font-size: 10.5px; font-weight: 800; color: var(--muted-2); text-transform: uppercase; letter-spacing: .5px; margin: 6px 2px 3px; }
+  .th-menu label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 3px 4px; cursor: pointer; border-radius: 6px; white-space: nowrap; }
+  .th-menu label:hover { background: var(--bg); }
+  .th-menu label input { accent-color: var(--accent); }
+  .lb-untrack { color: var(--red); cursor: pointer; font-weight: 700; }
+  .lb-untrack:hover { text-decoration: underline; }
+  .lb-close { cursor: pointer; color: var(--muted); font-size: 18px; padding: 0 4px; }
+  .lb-close:hover { color: var(--red); }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--border);
+    padding: 11px 18px; border-radius: 12px; box-shadow: var(--shadow); opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 50; }
   .toast.show { opacity: 1; }
-  .hd { display:flex; align-items:center; justify-content: space-between; gap: 10px; }
-  .addr-full { color: var(--muted); font-size: 12px; word-break: break-all; }
 </style>
 </head>
 <body>
   <header>
-    <div class="brand"><span class="dot"></span> Wallet&nbsp;Tracker <small>· 链上钱包跟踪</small></div>
-    <div id="chainStatus" class="mono" style="color:var(--muted);font-size:12px"></div>
-  </header>
-
-  <div class="wrap">
-    <!-- LEFT: watch-list + add + search -->
-    <div>
-      <div class="panel" style="margin-bottom:16px">
-        <h2>添加钱包</h2>
-        <div class="body">
-          <div class="row" style="margin-bottom:10px">
-            <select id="addChain" style="flex:.7"></select>
-            <input id="addLabel" placeholder="备注（可选）" style="flex:1.3" />
-          </div>
-          <label class="fld"><input id="addAddress" placeholder="钱包地址" /></label>
-          <button onclick="addWallet()" style="width:100%">+ 添加跟踪</button>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px">
-        <h2>快速查询（不加入清单）</h2>
-        <div class="body">
-          <div class="row" style="margin-bottom:10px">
-            <select id="qChain" style="flex:.7"></select>
-            <input id="qAddress" placeholder="地址" style="flex:1.6" />
-          </div>
-          <button class="ghost" style="width:100%" onclick="quickLookup()">查询</button>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h2>跟踪清单 <span id="wcount" style="color:var(--accent)"></span></h2>
-        <div class="body" id="walletList"><div class="spinner">加载中…</div></div>
-      </div>
+    <div class="logo"><span class="mark">P</span> Pocket <small>· 链上钱包跟踪</small></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <button class="btn-ghost" style="height:36px;padding:0 14px" onclick="openLeaderboard()">🏆 HL 排行榜</button>
+      <div class="hint mono" id="chainStatus"></div>
     </div>
-
-    <!-- RIGHT: detail -->
-    <div class="panel" style="align-self:start">
-      <h2>钱包详情</h2>
-      <div class="body" id="detail">
-        <div class="empty">从左侧选择一个钱包，或使用快速查询。</div>
+  </header>
+  <div class="container">
+    <div class="hero">
+      <div class="search">
+        <span class="ic">🔍</span>
+        <input id="address" placeholder="粘贴任意钱包地址，自动识别链（0x… / Solana / bc1…）" autocomplete="off"
+               oninput="onAddrInput()" onkeydown="if(event.key==='Enter')queryAddress(false)" />
+        <span class="detect" id="detect">等待输入</span>
+        <button class="btn-ghost" onclick="queryAddress(false)">查询</button>
+        <button class="btn-primary" onclick="queryAddress(true)">+ 跟踪</button>
+      </div>
+      <div class="hint-line" id="addrHint"></div>
+    </div>
+    <div class="grid">
+      <div>
+        <div class="section-title"><span>跟踪清单 <span class="count" id="wcount"></span></span>
+          <span style="display:flex;gap:8px">
+            <button class="an-btn" id="analyzeBtn" onclick="analyzeSelected()" style="display:none"></button>
+          </span></div>
+        <div class="list-tools" id="listTools">
+          <button class="tool-btn need-wallets" id="selAllBtn" onclick="toggleSelectAll()">全选</button>
+          <span class="th-multi need-wallets" id="listTierWrap" title="按账户级别筛选清单（可多选）">
+            <button class="tool-btn" id="listTierBtn" onclick="toggleListTierMenu(event)">全部等级 ▾</button>
+            <div class="th-menu" id="listTierMenu" style="display:none"></div>
+          </span>
+          <button class="tool-btn" onclick="triggerImport()">导入</button>
+          <button class="tool-btn need-wallets" onclick="exportWallets()">导出</button>
+          <button class="tool-btn danger need-wallets" id="purgeBtn" onclick="purgeInactive()" title="并行扫描并移除没有任何买卖/动作记录的地址">清理无交易</button>
+          <button class="tool-btn danger need-wallets" id="clearBtn" onclick="clearAllWallets()" title="删除勾选的地址（全选后可清空全部）">清空选中</button>
+          <input type="file" id="importFile" accept=".json,.txt,.csv" style="display:none" onchange="importWallets(this)">
+        </div>
+        <div id="walletList"><div class="spinner">加载中…</div></div>
+      </div>
+      <div class="panel" id="detail">
+        <div class="empty" style="margin:0;border:none">粘贴一个钱包地址并点「查询」，或从左侧选择已跟踪的钱包。</div>
       </div>
     </div>
   </div>
-
-  <div class="toast" id="toast"></div>
-
-<script>
-const TOKEN = localStorage.getItem("wt_token") || "";
-function hdrs() { return TOKEN ? { "X-Auth-Token": TOKEN, "Content-Type": "application/json" } : { "Content-Type": "application/json" }; }
-async function api(path, opts={}) {
-  const res = await fetch(path, { headers: hdrs(), ...opts });
-  if (res.status === 401) { const t = prompt("需要访问令牌 (WEB_TOKEN):"); if (t) { localStorage.setItem("wt_token", t); location.reload(); } throw new Error("unauthorized"); }
-  if (!res.ok) { const e = await res.json().catch(()=>({detail:res.statusText})); throw new Error(e.detail || "error"); }
-  return res.json();
-}
-function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 2200); }
-function shortAddr(a, h=6, t=4) { return a.length <= h+t+1 ? a : a.slice(0,h)+"…"+a.slice(-t); }
-function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
-function fmt(x){ if(!x) return "0"; const ax=Math.abs(x); if(ax>=1e6) return x.toLocaleString(undefined,{maximumFractionDigits:0}); if(ax>=1) return (+x.toFixed(4)).toString(); if(ax>=1e-4) return (+x.toFixed(6)).toString(); return x.toExponential(2); }
-function ago(ts){ if(!ts) return ""; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+"s"; if(s<3600) return Math.floor(s/60)+"m"; if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
-const TYPE_LABEL={BUY:"买入",SELL:"卖出",SWAP:"兑换",TRANSFER_IN:"转入",TRANSFER_OUT:"转出",OTHER:"其他"};
-
-let CHAINS = [];
-let selected = null;
-
-async function loadChains() {
-  const data = await api("/api/chains");
-  CHAINS = data.chains;
-  const opts = CHAINS.map(c => `<option value="${c.id}" ${c.usable?"":"disabled"}>${c.id.toUpperCase()}${c.usable?"":" (未配置)"}</option>`).join("");
-  document.getElementById("addChain").innerHTML = opts;
-  document.getElementById("qChain").innerHTML = opts;
-  const ok = CHAINS.filter(c=>c.usable).map(c=>c.id.toUpperCase()).join(" · ");
-  document.getElementById("chainStatus").textContent = "可用链: " + (ok||"无");
-}
-
-async function loadWallets() {
-  const data = await api("/api/wallets");
-  const list = document.getElementById("walletList");
-  document.getElementById("wcount").textContent = data.wallets.length ? "("+data.wallets.length+")" : "";
-  if (!data.wallets.length) { list.innerHTML = '<div class="empty">还没有跟踪任何钱包</div>'; return; }
-  list.innerHTML = data.wallets.map(w => `
-    <div class="wallet ${selected && selected.chain===w.chain && selected.address===w.address ? "active":""}"
-         onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
-      <span class="chip">${w.chain}</span>
-      <div class="meta">
-        <div class="nm">${esc(w.label || shortAddr(w.address))}</div>
-        <div class="ad mono">${shortAddr(w.address, 8, 6)}</div>
+  <div id="lbModal" class="modal-bg" onclick="if(event.target===this)closeLeaderboard()">
+    <div class="modal">
+      <div class="modal-head">🏆 Hyperliquid 排行榜
+        <span style="font-weight:400;color:var(--muted);font-size:12px;margin-left:8px">点列头排序（HL 仅提供 日/周/月/总）</span>
+        <div class="ctrls">
+          <select id="lbLimit" class="th-filter" style="max-width:none;font-size:13px" onchange="loadLeaderboard()">
+            <option value="25" selected>前 25</option><option value="50">前 50</option><option value="100">前 100</option>
+          </select>
+          <span class="lb-close" onclick="closeLeaderboard()">✕</span>
+        </div>
       </div>
-      <button class="danger" onclick="event.stopPropagation(); removeWallet(${w.id})">移除</button>
-    </div>`).join("");
-}
-
-async function addWallet() {
-  const chain = document.getElementById("addChain").value;
-  const address = document.getElementById("addAddress").value.trim();
-  const label = document.getElementById("addLabel").value.trim();
-  if (!address) return toast("请输入地址");
-  try {
-    const r = await api("/api/wallets", { method:"POST", body: JSON.stringify({chain, address, label}) });
-    toast(r.created ? "已添加" : "已在清单中");
-    document.getElementById("addAddress").value=""; document.getElementById("addLabel").value="";
-    await loadWallets();
-    selectWallet(r.wallet);
-  } catch(e){ toast(e.message); }
-}
-
-async function removeWallet(id) {
-  try { await api("/api/wallets/"+id, { method:"DELETE" }); toast("已移除"); await loadWallets(); }
-  catch(e){ toast(e.message); }
-}
-
-function selectWallet(w) {
-  selected = w;
-  loadWallets();
-  renderDetail(w.chain, w.address, w.label || "");
-}
-function quickLookup() {
-  const chain = document.getElementById("qChain").value;
-  const address = document.getElementById("qAddress").value.trim();
-  if (!address) return toast("请输入地址");
-  selected = null; loadWallets();
-  renderDetail(chain, address, "");
-}
-
-async function renderDetail(chain, address, label) {
-  const d = document.getElementById("detail");
-  d.innerHTML = `
-    <div class="hd" style="margin-bottom:14px">
-      <div>
-        <div style="font-size:16px;font-weight:700">${esc(label||"未命名")} <span class="chip">${chain}</span></div>
-        <div class="addr-full mono">${esc(address)}</div>
+      <div class="modal-body" id="lbBody"><div class="spinner">加载中…</div></div>
+      <div class="modal-foot">
+        <label class="switch"><input type="checkbox" id="lbAll" onchange="lbToggleAll(this.checked)"> 全选本页</label>
+        <span id="lbCount" style="color:var(--muted);font-size:13px"></span>
+        <button class="btn-primary" style="margin-left:auto;height:40px" onclick="importSelected()">导入所选到跟踪清单</button>
       </div>
     </div>
-    <div id="balBox"><div class="spinner">读取余额…</div></div>
-    <div style="height:18px"></div>
-    <div class="panel" style="background:var(--panel-2)">
-      <h2>动作轨迹</h2>
-      <div id="histBox"><div class="spinner">读取交易…</div></div>
-    </div>`;
+  </div>
+  <div class="toast" id="toast"></div>
+<script>
+const EVM_CHAINS = ["eth","bsc","base","arb","polygon","op"];
+const TYPE_LABEL = {BUY:"买入",SELL:"卖出",SWAP:"兑换",TRANSFER_IN:"转入",TRANSFER_OUT:"转出",OTHER:"其他"};
+const CAT_LABEL = {evm:"EVM",sol:"Solana",btc:"Bitcoin"};
+const DIR_LABEL = {"Open Long":"开多","Close Long":"平多","Open Short":"开空","Close Short":"平空","Buy":"买入","Sell":"卖出"};
+function dirCN(d){ if(!d) return ""; if(DIR_LABEL[d]) return DIR_LABEL[d];
+  return d.replace(/Open/gi,"开").replace(/Close/gi,"平").replace(/Long/gi,"多").replace(/Short/gi,"空").replace(/Buy/gi,"买入").replace(/Sell/gi,"卖出"); }
+const TOKEN = localStorage.getItem("wt_token") || "";
+let CHAINS = [], MORALIS = false;
+let sel = null;           // {chain,address,label,category}
+let activeTab = "tx", hideSpam = true, onlyTrades = true, chainFilter = null;
+let typeFilter = "", coinFilter = "", sortKey = "", sortDir = "desc";  // 动作流列筛选/排序
+let sumCoin = "", sumSort = "", sumDir = "desc";                      // 币种汇总列筛选/排序
+let hlCoin = "", hlSide = "", hlSort = "", hlDir = "desc";            // 持仓表筛选/排序
+let listTiers = new Set(), listTierOpen = false;                      // 跟踪清单按账户级别多选筛选
+let timer = null, autoOn = true;
+let cache = { port:null, bal:null, hist:null, pnl:null, swaps:null, hl:null, updated:0 };
+let cardCache = {};   // 卡片总值/浮盈缓存，避免每次选钱包都重打所有接口
+let detailCache = {}; // 详情数据快照，切换回最近看过的钱包时秒开
+function detailKey(s){ return s ? s.chain+":"+s.address+":"+s.category : ""; }
+let trackedAddrs = new Set(), lbRows = [], lbSel = new Set(), lbSort = "week", lbDir = "desc";
+let lbSign = {day:"", week:"", month:""};  // 排行榜按 日/周/月 盈亏正负筛选（""=全部 / pos / neg）
+let lbTiers = new Set(), lbTierOpen = false;  // 排行榜按等级多选筛选（空=全部）
+let analysisSet = new Set();  // 多选做持仓方向分析的地址
+let walletList = [];          // 当前跟踪清单（供全选/导出/清理复用）
+let inAnalysis = false, analysisData = null;                          // 分析模块视图状态
+let anBias = "", anSort = "", anDir = "desc";                         // 分析表格方向筛选/排序
+let anCat = "", anCoins = new Set(), anMenuOpen = false;              // 分析分类筛选 + 币种多选
+let anOpenCoin = "";                                                  // 分析表展开明细的币种（点击行切换）
 
-  api(`/api/balance?chain=${chain}&address=${encodeURIComponent(address)}`)
-    .then(b => { document.getElementById("balBox").innerHTML = balHTML(b); })
-    .catch(e => { document.getElementById("balBox").innerHTML = `<div class="note">余额查询失败：${esc(e.message)}</div>`; });
+// 币种归类：加密 / 股票 / 期货 / 其它。
+// HL 主永续全是加密(无冒号前缀)；股票/商品/指数多为 builder 子交易所(dex:SYM)。
+// 判定：无冒号=加密；带冒号按 期货(商品/期货代号)→股票(个股/指数)→加密→指数名启发式→其它。
+const FUTURES_SYMS = new Set([
+  // 金属
+  "GOLD","XAU","XAUUSD","GC","SILVER","XAG","XAGUSD","SI","PLATINUM","XPT","PL","PALLADIUM","XPD","PA",
+  "COPPER","HG","ALUMINUM","ALU","ALI","ZINC","NICKEL","LEAD","TIN","IRON","STEEL","URANIUM","URA","LITHIUM","COBALT",
+  // 能源
+  "OIL","CRUDE","CL","WTI","USOIL","XTIUSD","BRENT","BRENTOIL","BRT","UKOIL","XBRUSD","NATGAS","NGAS","NG","XNGUSD",
+  "GAS","GASOLINE","RB","HEATINGOIL","HO","ETHANOL","COAL","CARBON",
+  // 农产品
+  "CORN","ZC","WHEAT","ZW","SOYBEAN","SOYBEANS","ZS","SOYOIL","ZL","SOYMEAL","ZM","SUGAR","SB","COFFEE","KC",
+  "COCOA","CC","COTTON","CT","LUMBER","LBS","CATTLE","LE","HOGS","HE","RICE","ZR","OATS","ZO","ORANGEJUICE","OJ",
+  "MILK","RUBBER","PALMOIL","WOOD",
+  // 其它商品现货
+  "DRAM","NAND","MEMORY"]);
+const STOCK_SYMS = new Set([
+  // 指数(字母名)
+  "SPX","SPX500","SP500","ES","US500","US30","DJ30","DJIA","DJI","DOW","US100","NAS100","NASDAQ","NDX","NQ","USTECH","US2000",
+  "RUSSELL","RUT","RTY","VIX","GER40","DAX","DAX40","DE40","UK100","FTSE","FTSE100","UKX","EU50","STOXX50","SX5E",
+  "FRA40","CAC","CAC40","JP225","NIKKEI","NKY","N225","HK50","HSI","CHINA50","CN50","AUS200","ASX200","NIFTY","IN50",
+  "SPY","QQQ","IWM","DIA","VOO","VTI",
+  // 个股/ADR
+  "AAPL","TSLA","NVDA","MSFT","GOOGL","GOOG","AMZN","META","NFLX","AMD","INTC","COIN","MSTR","HOOD","PLTR","GME","AMC",
+  "NKE","DIS","BABA","PYPL","SQ","BLOCK","UBER","LYFT","ABNB","SHOP","SNAP","BAC","JPM","WFC","C","GS","MS","V","MA",
+  "WMT","COST","KO","PEP","MCD","SBUX","BA","CAT","GE","CRM","ORCL","ADBE","AVGO","MU","QCOM","TXN","ARM","SMCI","TSM",
+  "ASML","NIO","XPEV","LI","RIVN","LCID","SOFI","DKNG","RBLX","U","NET","DDOG","SNOW","CRWD","PANW","ZS","MRNA","PFE",
+  "JNJ","XOM","CVX","T","VZ","F","GM","BRK","BRKB","LLY","UNH","HD","ABBV","MRK","ADP","NOW","INTU","AMAT","LRCX",
+  "MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV","GLXY","BMNR","SNDK","WDC","STX","ROKU","WBD","SPCE","RKLB","JOBY",
+  "SPCX","CRCL2","HIMS","APP","DELL","ORCL","IBM","CSCO","MRVL","ON","WOLF","ENPH","FSLR","PLUG","CHPT","AI","BBAI"]);
+// 可能出现在 builder 子交易所(带冒号)的加密币种，仍归加密
+const CRYPTO_SYMS = new Set(["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","LTC","BCH","DOT","MATIC","TRX","TON","SUI","APT","ARB","OP","HYPE","PEPE","SHIB","BONK","WIF","WLD","JUP","JTO","PYTH","TIA","SEI","INJ","AAVE","UNI","XMR","LIT","ENA","ONDO","FARTCOIN","KPEPE","KBONK","KSHIB"]);  // coinBase() 已转大写，清单须全大写
+const CAT_CN = {crypto:"加密", stock:"股票", futures:"期货", other:"其它"};
+const CATS = ["crypto","stock","futures","other"];
+const INDEX_RE = /^[A-Z]{1,4}\d{2,4}$/;  // 指数名启发式：US500 / NAS100 / GER40 / JP225 / XYZ100
+function coinBase(c){ const s=String(c||""); const i=s.lastIndexOf(":"); return (i>=0?s.slice(i+1):s).toUpperCase(); }
+function coinCat(c){
+  const s=String(c||""), b=coinBase(c);
+  if(!s.includes(":")) return "crypto";        // 主永续无前缀，全是加密
+  if(FUTURES_SYMS.has(b)) return "futures";    // 商品/期货代号
+  if(STOCK_SYMS.has(b)) return "stock";        // 个股/指数
+  if(CRYPTO_SYMS.has(b)) return "crypto";      // builder 上的加密
+  if(INDEX_RE.test(b)) return "stock";         // 形如 XYZ100/US500 的指数名，归股票
+  return "other";                              // 其余暂归其它
+}
+// 币种中文名（按代号，取到才显示，取不到就不显示）。
+const CN_NAMES = {
+  // 加密
+  BTC:"比特币", ETH:"以太坊", SOL:"索拉纳", BNB:"币安币", XRP:"瑞波币", DOGE:"狗狗币", ADA:"艾达币",
+  AVAX:"雪崩", DOT:"波卡", LTC:"莱特币", BCH:"比特币现金", TRX:"波场", TON:"电报币", XMR:"门罗币",
+  SHIB:"柴犬币", PEPE:"佩佩币", WLD:"世界币", UNI:"Uniswap", AAVE:"Aave", LINK:"Chainlink",
+  // 股票
+  AAPL:"苹果", TSLA:"特斯拉", NVDA:"英伟达", MSFT:"微软", GOOGL:"谷歌", GOOG:"谷歌", AMZN:"亚马逊",
+  META:"Meta", NFLX:"奈飞", AMD:"超威半导体", INTC:"英特尔", COIN:"Coinbase", MSTR:"微策略", HOOD:"罗宾汉",
+  PLTR:"Palantir", BABA:"阿里巴巴", NIO:"蔚来", XPEV:"小鹏汽车", LI:"理想汽车", TSM:"台积电", ASML:"阿斯麦",
+  SNDK:"闪迪", MU:"美光科技", QCOM:"高通", AVGO:"博通", ORCL:"甲骨文", CRM:"Salesforce", ADBE:"Adobe",
+  DIS:"迪士尼", NKE:"耐克", KO:"可口可乐", PEP:"百事", MCD:"麦当劳", SBUX:"星巴克", WMT:"沃尔玛", COST:"好市多",
+  JPM:"摩根大通", BAC:"美国银行", GS:"高盛", MS:"摩根士丹利", V:"Visa", MA:"万事达", BA:"波音", PFE:"辉瑞",
+  JNJ:"强生", XOM:"埃克森美孚", CVX:"雪佛龙", F:"福特", GM:"通用汽车", UBER:"优步", SHOP:"Shopify",
+  PYPL:"PayPal", GME:"游戏驿站", AMC:"AMC院线", MRNA:"Moderna", LLY:"礼来", UNH:"联合健康", HD:"家得宝",
+  IBM:"IBM", CSCO:"思科", MARA:"Marathon", RIOT:"Riot", ARM:"Arm", SMCI:"超微电脑", DELL:"戴尔", CRCL:"Circle",
+  // 指数
+  SP500:"标普500", SPX:"标普500", SPX500:"标普500", US500:"标普500", ES:"标普500", SPY:"标普500ETF",
+  NDX:"纳斯达克100", NAS100:"纳斯达克100", US100:"纳斯达克100", USTECH:"纳斯达克100", QQQ:"纳指100ETF",
+  US30:"道琼斯", DJ30:"道琼斯", DJIA:"道琼斯", DJI:"道琼斯", DOW:"道琼斯", DIA:"道指ETF",
+  RUSSELL:"罗素2000", US2000:"罗素2000", RUT:"罗素2000", IWM:"罗素2000ETF", VIX:"波动率指数",
+  GER40:"德国DAX40", DAX:"德国DAX", DAX40:"德国DAX40", DE40:"德国DAX40", UK100:"英国富时100", FTSE:"富时100",
+  FTSE100:"富时100", JP225:"日经225", NIKKEI:"日经225", N225:"日经225", HK50:"恒生指数", HSI:"恒生指数",
+  CHINA50:"富时中国A50", CN50:"富时中国A50", AUS200:"澳洲200", ASX200:"澳洲200", NIFTY:"印度Nifty50",
+  EU50:"欧洲斯托克50", STOXX50:"欧洲斯托克50", CAC40:"法国CAC40",
+  // 商品/期货
+  GOLD:"黄金", XAU:"黄金", GC:"黄金", SILVER:"白银", XAG:"白银", SI:"白银", PLATINUM:"铂金", PL:"铂金",
+  PALLADIUM:"钯金", PA:"钯金", COPPER:"铜", HG:"铜", ALUMINUM:"铝", ZINC:"锌", NICKEL:"镍", LEAD:"铅",
+  TIN:"锡", IRON:"铁矿石", URANIUM:"铀", LITHIUM:"锂", OIL:"原油", CRUDE:"原油", CL:"原油(WTI)", WTI:"原油(WTI)",
+  USOIL:"美国原油", BRENT:"布伦特原油", BRENTOIL:"布伦特原油", UKOIL:"布伦特原油", NATGAS:"天然气", NG:"天然气",
+  GAS:"天然气", GASOLINE:"汽油", RB:"汽油", HEATINGOIL:"取暖油", CORN:"玉米", WHEAT:"小麦", SOYBEAN:"大豆",
+  SOYBEANS:"大豆", SUGAR:"白糖", COFFEE:"咖啡", COCOA:"可可", COTTON:"棉花", RICE:"大米", OATS:"燕麦",
+  CATTLE:"活牛", HOGS:"生猪", LUMBER:"木材", DRAM:"内存(DRAM)", NAND:"闪存",
+};
+function coinCN(c){ return CN_NAMES[coinBase(c)] || ""; }
 
-  api(`/api/history?chain=${chain}&address=${encodeURIComponent(address)}&limit=25`)
-    .then(h => { document.getElementById("histBox").innerHTML = histHTML(h); })
-    .catch(e => { document.getElementById("histBox").innerHTML = `<div class="note" style="padding:14px">交易查询失败：${esc(e.message)}</div>`; });
+function hdrs(){ return TOKEN ? {"X-Auth-Token":TOKEN,"Content-Type":"application/json"} : {"Content-Type":"application/json"}; }
+async function api(path, opts={}){
+  const r = await fetch(path,{headers:hdrs(),...opts});
+  if(r.status===401){ const t=prompt("需要访问令牌 (WEB_TOKEN):"); if(t){localStorage.setItem("wt_token",t);location.reload();} throw new Error("unauthorized"); }
+  if(!r.ok){ const e=await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail||"error"); }
+  return r.json();
+}
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2300); }
+const COPY_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+function copyBtn(text){ return `<span class="copy-ic" title="复制地址" onclick="copyText('${text}',event)">${COPY_SVG}</span>`; }
+const TRASH_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg>';
+const EDIT_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+// 地址自定义名称（本地保存；已跟踪的会同步到数据库标签）
+let customNames = {};
+try{ customNames = JSON.parse(localStorage.getItem("wt_names")||"{}") || {}; }catch(e){ customNames = {}; }
+function saveNames(){ try{ localStorage.setItem("wt_names", JSON.stringify(customNames)); }catch(e){} }
+async function renameWallet(id){
+  const w = walletList.find(x=>x.id===id); if(!w){ toast("未找到该钱包"); return; }
+  const name = prompt("为该地址设置名称（留空清除）：", w.label||"");
+  if(name===null) return;
+  const label = name.trim();
+  try{
+    await api("/api/wallets/"+id, {method:"PATCH", body:JSON.stringify({label})});
+    const k=(w.address||'').toLowerCase(); if(label) customNames[k]=label; else delete customNames[k]; saveNames();
+    toast("已重命名"); await loadWallets();
+  }catch(e){ toast(e.message); }
+}
+async function lbRename(addr){
+  const key=(addr||'').toLowerCase();
+  const name = prompt("为该地址设置名称（留空清除）：", customNames[key]||"");
+  if(name===null) return;
+  const label = name.trim();
+  if(label) customNames[key]=label; else delete customNames[key]; saveNames();
+  const w = walletList.find(x=>(x.address||'').toLowerCase()===key);  // 已跟踪则同步数据库标签
+  if(w){ try{ await api("/api/wallets/"+w.id,{method:"PATCH",body:JSON.stringify({label})}); await loadWallets(); }catch(e){} }
+  renderLeaderboard(); toast("已重命名");
+}
+function copyText(t, ev){ if(ev) ev.stopPropagation();
+  const done=()=>toast("已复制地址");
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done));
+  else fallbackCopy(t,done);
+}
+function fallbackCopy(t,done){ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");done();}catch(e){} document.body.removeChild(ta); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function shortAddr(a,h=6,t=4){ return a.length<=h+t+1?a:a.slice(0,h)+"…"+a.slice(-t); }
+const _D2={minimumFractionDigits:2,maximumFractionDigits:2};
+function fmt(x){ x=+x||0; const a=Math.abs(x); if(a>=1e9) return (x/1e9).toFixed(2)+"B"; if(a>=1e6) return (x/1e6).toFixed(2)+"M"; return x.toLocaleString(undefined,_D2); }
+function usd(x){ if(x==null) return "—"; const s=x<0?"-":""; const a=Math.abs(x); if(a>=1e9) return s+"$"+(a/1e9).toFixed(2)+"B"; if(a>=1e6) return s+"$"+(a/1e6).toFixed(2)+"M"; return s+"$"+a.toLocaleString(undefined,_D2); }
+function price(x){ if(x==null) return "—"; const a=Math.abs(x); if(a>=1) return "$"+x.toLocaleString(undefined,_D2); if(a===0) return "$0.00"; return "$"+(+x.toPrecision(2)); }
+function ago(ts){ if(!ts) return ""; const s=Math.floor(Date.now()/1000-ts); if(s<60)return s+"s"; if(s<3600)return Math.floor(s/60)+"m"; if(s<86400)return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
+function fmtDate(ts){ if(!ts) return ""; const d=new Date(ts*1000); const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function hashHue(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h%360; }
+function avatarStyle(a){ const h=hashHue(a||""); return `background:linear-gradient(135deg,hsl(${h},75%,58%),hsl(${(h+50)%360},75%,52%))`; }
+
+async function loadChains(){
+  const d = await api("/api/chains"); CHAINS=d.chains; MORALIS=!!d.moralis;
+  const ok = CHAINS.filter(c=>c.usable && !c.reason).map(c=>c.id.toUpperCase());
+  document.getElementById("chainStatus").textContent = "可用链: " + (ok.join(" · ")||"仅 BTC") + (MORALIS?"":" · 持仓未启用");
+}
+function chainUsable(id){ const c=CHAINS.find(x=>x.id===id); return c&&c.usable; }
+function firstUsableEvm(){ return EVM_CHAINS.find(chainUsable) || "eth"; }
+function anyEvmUsable(){ return EVM_CHAINS.some(chainUsable); }
+
+function detectCategory(addr){
+  addr=addr.trim(); if(!addr) return null;
+  if(/^0x[0-9a-fA-F]{40}$/.test(addr)) return "evm";
+  if(/^(bc1|tb1)[0-9a-z]{8,}$/i.test(addr)) return "btc";
+  if(/^[13][a-km-zA-HJ-NP-Z1-9]{24,34}$/.test(addr)) return "btc";
+  if(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return "sol";
+  return null;
+}
+function onAddrInput(){
+  const v=document.getElementById("address").value.trim();
+  const chip=document.getElementById("detect"), hint=document.getElementById("addrHint");
+  const cat=detectCategory(v);
+  if(!v){ chip.textContent="等待输入"; chip.className="detect"; hint.textContent=""; return; }
+  if(!cat){ chip.textContent="无法识别"; chip.className="detect"; hint.textContent=""; return; }
+  chip.textContent="识别：" + CAT_LABEL[cat] + (cat==="evm"?"（多链聚合）":""); chip.className="detect ok";
+  hint.textContent = (cat==="evm" && !anyEvmUsable()) ? "⚠️ 这是 EVM 地址，请在 .env 配置免费的 ETHERSCAN_API_KEY。" : "";
 }
 
-function balHTML(b) {
-  let stats = `<div class="stat"><div class="k">余额</div><div class="v">${fmt(b.native_amount)} <small>${esc(b.native_symbol)}</small></div></div>`;
-  if (b.extra && b.extra.tx_count != null)
-    stats += `<div class="stat"><div class="k">历史交易数</div><div class="v">${b.extra.tx_count}</div></div>`;
-  let tokens = "";
-  if (b.tokens && b.tokens.length) {
-    tokens = `<div class="stat" style="grid-column:1/-1"><div class="k" style="margin-bottom:6px">代币持仓 (${b.tokens.length})</div>` +
-      b.tokens.map(t=>`<div class="token-row"><span>${esc(t.symbol)}</span><span class="mono">${fmt(t.amount)}</span></div>`).join("") + `</div>`;
+// 按总资产(含HL)自动分级
+function walletTier(usd){
+  usd=+usd||0;
+  if(usd>=1e8) return {t:"巨鲸", e:"🐳", c:"tier-whale"};
+  if(usd>=1e7) return {t:"超大户", e:"🐋", c:"tier-superwhale"};
+  if(usd>=1e6) return {t:"大户", e:"🦈", c:"tier-shark"};
+  if(usd>=1e5) return {t:"中户", e:"🐬", c:"tier-dolphin"};
+  if(usd>=1e4) return {t:"小户", e:"🐟", c:"tier-fish"};
+  return {t:"散户", e:"🦐", c:"tier-shrimp"};
+}
+function tierBadge(usd){ if(usd==null) return ""; const g=walletTier(usd); return `<span class="tier ${g.c}" title="按总资产(含HL)自动分级：巨鲸≥$100M·超大户≥$10M·大户≥$1M·中户≥$100K·小户≥$10K">${g.e} ${g.t}</span>`; }
+// 共用等级多选下拉（勾选框式）
+const TIER_LIST=[["巨鲸","🐳 巨鲸"],["超大户","🐋 超大户"],["大户","🦈 大户"],["中户","🐬 中户"],["小户","🐟 小户"],["散户","🦐 散户"]];
+function tierMenuInner(selSet, cbFn){
+  return `<div class="cat-row"><span onclick="${cbFn}('__clear__')">全部（清空）</span></div>`+
+    TIER_LIST.map(([t,l])=>`<label><input type="checkbox" value="${t}" ${selSet.has(t)?'checked':''} onchange="${cbFn}(this.value,this.checked)"><span>${l}</span></label>`).join("");
+}
+function tierBtnLabel(selSet){ return (selSet.size?`已选 ${selSet.size} 级`:"全部等级")+" ▾"; }
+
+function toggleListTierMenu(e){ if(e) e.stopPropagation(); listTierOpen=!listTierOpen; renderListTierUI(); }
+function toggleListTier(v,on){
+  if(v==='__clear__') listTiers.clear();
+  else if(on) listTiers.add(v); else listTiers.delete(v);
+  renderListTierUI(); applyListTier();
+}
+function renderListTierUI(){
+  const btn=document.getElementById("listTierBtn"), menu=document.getElementById("listTierMenu");
+  if(btn) btn.textContent=tierBtnLabel(listTiers);
+  if(menu){ menu.style.display=listTierOpen?"block":"none"; if(listTierOpen) menu.innerHTML=tierMenuInner(listTiers,'toggleListTier'); }
+}
+function walletVisible(w){  // 多选等级筛选下该钱包是否可见（等级来自卡片实测总值）
+  if(!listTiers.size) return true;
+  const cc=cardCache[w.chain+":"+w.address];
+  return !!(cc && cc.usd!=null && listTiers.has(walletTier(cc.usd).t));
+}
+function applyListTier(){
+  // 隐藏不匹配的卡片；同时取消它们的勾选——否则「全选+清空选中」会把看不见的地址也删掉
+  walletList.forEach(w=>{
+    const card=document.querySelector(`.wcard[data-key="${w.chain}:${w.address}"]`); if(!card) return;
+    const vis=walletVisible(w);
+    card.style.display = vis ? "" : "none";
+    if(!vis && analysisSet.has(w.address)){
+      analysisSet.delete(w.address);
+      const cb=card.querySelector('.wsel'); if(cb) cb.checked=false;
+    }
+  });
+  updateSelUI();
+}
+
+async function loadWallets(){
+  const d=await api("/api/wallets");
+  walletList=d.wallets;
+  trackedAddrs=new Set(d.wallets.map(w=>(w.address||'').toLowerCase()));
+  analysisSet=new Set([...analysisSet].filter(a=>trackedAddrs.has((a||'').toLowerCase())));
+  document.getElementById("wcount").textContent = d.wallets.length?"("+d.wallets.length+")":"";
+  // 工具条始终显示（至少保留「导入」），仅隐藏需要钱包才有意义的按钮，避免清空后按钮全消失
+  document.querySelectorAll(".need-wallets").forEach(b=>{ b.style.display = d.wallets.length?"":"none"; });
+  updateSelUI();
+  const list=document.getElementById("walletList");
+  if(!d.wallets.length){ list.innerHTML='<div class="empty" style="border-style:dashed">还没有跟踪任何钱包<br><span style="font-size:12px;color:var(--muted-2)">上方粘贴地址后点「+ 跟踪」</span></div>'; return; }
+  list.innerHTML=d.wallets.map(w=>{
+    const active=sel&&sel.chain===w.chain&&sel.address===w.address;
+    const initial=(w.label||w.address).slice(0,1).toUpperCase();
+    const cc=cardCache[w.chain+":"+w.address];  // 用缓存值初始化，避免重建时闪 —/重读错觉
+    return `<div class="wcard ${active?"active":""}" data-key="${w.chain}:${w.address}" onclick='selectWallet(${JSON.stringify(w).replace(/'/g,"&#39;")})'>
+      ${EVM_CHAINS.includes(w.chain)?`<input type="checkbox" class="wsel" title="选入多钱包分析" data-addr="${w.address}" onclick="event.stopPropagation();toggleAnalysis('${w.address}',this.checked)" ${analysisSet.has(w.address)?'checked':''}>`:''}
+      <div class="avatar" style="${avatarStyle(w.address)}">${esc(initial)}${w.unread>0?`<span class="wbadge">${w.unread>99?'99+':w.unread}</span>`:''}</div>
+      <div class="info"><div class="nm">${w.pinned?'<span class="pin-mark" title="已置顶">📌</span> ':''}${esc(w.label||shortAddr(w.address))} <span class="chip">${EVM_CHAINS.includes(w.chain)?"EVM":w.chain}</span>
+        <span class="edit-ic" title="重命名" onclick="event.stopPropagation();renameWallet(${w.id})">${EDIT_SVG}</span></div>
+        <div class="ad mono" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span id="wtier-${w.id}">${cc&&cc.usd!=null?tierBadge(cc.usd):""}</span>${shortAddr(w.address,8,6)}${copyBtn(w.address)}</div></div>
+      <div class="bal"><div class="v" id="wbal-${w.id}">${cc?cc.text:"—"}</div><div class="s" id="wpnl-${w.id}">${cc?cc.pnl:"总值"}</div></div>
+      <div class="wdel" title="移除跟踪" onclick='event.stopPropagation();removeWallet(${w.id})'>${TRASH_SVG}</div>
+      <div class="wmove">
+        <span class="${w.pinned?'on':''}" title="${w.pinned?'取消置顶':'置顶（钉住，新增地址不会挤下去）'}" onclick="event.stopPropagation();moveWallet(${w.id},'${w.pinned?'untop':'top'}')">📌</span>
+        <span title="上移" onclick="event.stopPropagation();moveWallet(${w.id},'up')">↑</span>
+        <span title="下移" onclick="event.stopPropagation();moveWallet(${w.id},'down')">↓</span>
+      </div></div>`;
+  }).join("");
+  // 3 个一批填充卡片总值/浮盈：比串行快 3 倍，又不会把免费接口打到限流
+  (async()=>{ const ws=d.wallets; for(let i=0;i<ws.length;i+=3){ await Promise.all(ws.slice(i,i+3).map(fillCard)); applyListTier(); } })();
+  renderListTierUI();
+  applyListTier();
+  syncListHeight();
+}
+
+async function fillCard(w){
+  const el=document.getElementById("wbal-"+w.id); if(!el) return;
+  const pel=document.getElementById("wpnl-"+w.id);
+  const key=w.chain+":"+w.address;
+  const c=cardCache[key];
+  if(c && Date.now()-c.ts<60000){ el.textContent=c.text; if(pel) pel.innerHTML=c.pnl; const tel=document.getElementById("wtier-"+w.id); if(tel) tel.innerHTML=tierBadge(c.usd); return; }
+  try{
+    if(EVM_CHAINS.includes(w.chain)){
+      let total=0, have=false, upnl=0, pnlType='';
+      if(MORALIS){ try{ const n=await api(`/api/networth?address=${w.address}`); total+=n.total_usd; have=true; }catch(e){} }
+      try{ const hh=await api(`/api/hyperliquid?address=${w.address}&fills=1&summary=1`); if(hh){ if(hh.total_usd){ total+=hh.total_usd; have=true; }
+        if(hh.unrealized_pnl){ upnl=hh.unrealized_pnl; pnlType='浮'; } else if(hh.realized_pnl){ upnl=hh.realized_pnl; pnlType='实'; } } }catch(e){}
+      let text, usdVal=have?total:null;
+      if(have){ text=usd(total); el.textContent=text; }
+      else { const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`); text=fmt(b.native_amount)+" "+b.native_symbol; el.textContent=text; }
+      const pnl = upnl ? `<span class="${upnl>=0?'pos':'neg'}">${pnlType} ${(upnl>=0?'+':'')+usd(upnl)}</span>` : "总值";
+      if(pel) pel.innerHTML=pnl;
+      const tel=document.getElementById("wtier-"+w.id); if(tel) tel.innerHTML=tierBadge(usdVal);
+      cardCache[key]={text, pnl, usd:usdVal, ts:Date.now()};
+    } else {
+      const b=await api(`/api/balance?chain=${w.chain}&address=${encodeURIComponent(w.address)}`);
+      const usdVal=b.extra&&b.extra.total_usd!=null?b.extra.total_usd:null;
+      const text=usdVal!=null?usd(usdVal):fmt(b.native_amount)+" "+b.native_symbol;
+      el.textContent=text;
+      const tel=document.getElementById("wtier-"+w.id); if(tel) tel.innerHTML=tierBadge(usdVal);
+      cardCache[key]={text, pnl:"总值", usd:usdVal, ts:Date.now()};
+    }
+  }catch(e){ el.textContent="—"; }
+}
+function queryAddress(add){
+  const address=document.getElementById("address").value.trim();
+  if(!address) return toast("请粘贴钱包地址");
+  const cat=detectCategory(address); if(!cat) return toast("无法识别该地址格式");
+  const chain = cat==="evm" ? firstUsableEvm() : cat;
+  if(!chainUsable(chain)) return toast(cat==="evm"?"请先在 .env 配置 ETHERSCAN_API_KEY":"该链未配置 API Key");
+  inAnalysis=false; sel={chain,address,label:"",category:cat}; activeTab="tx"; chainFilter=null; resetTradeFilters();
+  if(add) doAdd(chain,address); else { highlightActive(); openDetail(true); }
+}
+async function doAdd(chain,address){
+  try{ const r=await api("/api/wallets",{method:"POST",body:JSON.stringify({chain,address,label:""})});
+    if(r.created){ toast("✅ 已添加跟踪"); document.getElementById("address").value=""; onAddrInput(); await loadWallets(); selectWallet(r.wallet); }
+    else { toast(`⚠️ 该地址已在跟踪清单中（#${r.wallet.id}），已为你定位`); selectWallet(r.wallet); }
+  }catch(e){ toast(e.message); }
+}
+async function removeWallet(id){ try{ await api("/api/wallets/"+id,{method:"DELETE"}); toast("已移除"); await loadWallets(); }catch(e){ toast(e.message);} }
+async function moveWallet(id, action){
+  const list=document.getElementById("walletList"), keep=list?list.scrollTop:0;
+  try{
+    const r=await api(`/api/wallets/${id}/move`,{method:"POST",body:JSON.stringify({action})});
+    if(!r.moved){ toast(action==='down'?"已在最底部（置顶组内不跨组移动）":action==='untop'?"未置顶":"已在最顶部（置顶组内不跨组移动）"); return; }
+    await loadWallets();
+    if(list) list.scrollTop = action==='top' ? 0 : keep;  // 保持滚动位置，置顶则回到顶部
+  }catch(e){ toast(e.message); }
+}
+async function clearAllWallets(){
+  // 只删勾选的地址；想清空全部先点「全选」再点这里
+  const selSet=new Set([...analysisSet].map(a=>(a||'').toLowerCase()));
+  const targets=walletList.filter(w=>selSet.has((w.address||'').toLowerCase()));
+  if(!targets.length) return toast("请先勾选要删除的地址（点「全选」后可清空全部）");
+  if(!confirm(`确定移除勾选的 ${targets.length} 个地址？此操作不可撤销。`)) return;
+  let n=0;
+  for(const w of targets){ try{ await api("/api/wallets/"+w.id,{method:"DELETE"}); n++; }catch(e){} }
+  analysisSet.clear();
+  if(sel && selSet.has((sel.address||'').toLowerCase())){  // 正在看的钱包被删了就复位详情
+    sel=null; inAnalysis=false; stopTimer();
+    document.getElementById("detail").innerHTML='<div class="empty" style="margin:0;border:none">粘贴一个钱包地址并点「查询」，或从左侧选择已跟踪的钱包。</div>';
   }
-  let note = (b.extra && b.extra.note) ? `<div class="note">${esc(b.extra.note)}</div>` : "";
-  return `<div class="stat-grid">${stats}${tokens}</div>${note}`;
+  toast(`已移除 ${n} 个地址`);
+  await loadWallets();
+}
+function highlightActive(){ const key=sel?sel.chain+":"+sel.address:""; document.querySelectorAll('.wcard').forEach(el=>el.classList.toggle('active', el.dataset.key===key)); }
+function syncListHeight(){
+  const detail=document.getElementById("detail"), list=document.getElementById("walletList");
+  if(!detail||!list) return;
+  if(window.innerWidth<=920){ list.style.maxHeight=""; list.style.overflowY=""; return; }  // 单列布局(移动端)不锁高度
+  const listTop=list.getBoundingClientRect().top;              // 清单在视口中的顶部
+  const detBottom=detail.getBoundingClientRect().bottom;       // 右侧模块底部
+  const minBottom=Math.max(window.innerHeight-40, listTop+460);// 视口下限，保证清单足够高且稳定
+  const h=Math.max(detBottom, minBottom) - listTop;            // 让清单底部对齐右侧模块底部
+  list.style.maxHeight=h+"px"; list.style.overflowY="auto";
+}
+window.addEventListener("resize", syncListHeight);
+function markRead(w){  // 点开钱包=已读：立即摘掉红圈并通知后端清零
+  if(!w||!w.id) return;
+  const b=document.querySelector(`.wcard[data-key="${w.chain}:${w.address}"] .wbadge`); if(b) b.remove();
+  const lw=walletList.find(x=>x.id===w.id); if(lw) lw.unread=0;
+  api(`/api/wallets/${w.id}/read`,{method:"POST"}).catch(()=>{});
+}
+function selectWallet(w){ inAnalysis=false; markRead(w); sel={chain:w.chain,address:w.address,label:w.label||"",category:EVM_CHAINS.includes(w.chain)?"evm":w.chain}; activeTab="tx"; chainFilter=null; resetTradeFilters(); highlightActive(); openDetail(true); }
+function switchChain(id){ if(!sel) return;
+  if(sel.category==="evm"&&MORALIS){ chainFilter=(chainFilter===id?null:id); renderDetail(); }
+  else { sel.chain=id; chainFilter=null; openDetail(true); } }  // 非聚合模式换链时清掉 HL 筛选，避免粘连
+function setChainFilter(v){ chainFilter=v; renderDetail(); }
+function setTypeFilter(v){ typeFilter=v; renderDetail(); }
+function setCoinFilter(v){ coinFilter=v; renderDetail(); }
+function setSort(k){ if(sortKey===k){ sortDir = sortDir==="desc"?"asc":"desc"; } else { sortKey=k; sortDir="desc"; } renderDetail(); }
+function resetTradeFilters(){ typeFilter=""; coinFilter=""; sortKey=""; sortDir="desc"; sumCoin=""; sumSort=""; sumDir="desc"; hlCoin=""; hlSide=""; hlSort=""; hlDir="desc"; }
+function setSumCoin(v){ sumCoin=v; renderDetail(); }
+function setSumSort(k){ if(sumSort===k){ sumDir = sumDir==="desc"?"asc":"desc"; } else { sumSort=k; sumDir="desc"; } renderDetail(); }
+function setHlCoin(v){ hlCoin=v; renderDetail(); }
+function setHlSide(v){ hlSide=v; renderDetail(); }
+function setHlSort(k){ if(hlSort===k){ hlDir = hlDir==="desc"?"asc":"desc"; } else { hlSort=k; hlDir="desc"; } renderDetail(); }
+
+function stopTimer(){ if(timer){clearInterval(timer);timer=null;} }
+function startTimer(){ stopTimer(); if(autoOn) timer=setInterval(refreshStream,60000); }
+function activeChains(){
+  const set=new Set();
+  if(sel && EVM_CHAINS.includes(sel.chain)) set.add(sel.chain);
+  const p=cache.port;
+  if(p && p.chains) p.chains.forEach(c=>{ if(EVM_CHAINS.includes(c.chain)) set.add(c.chain); });
+  const arr=[...set];
+  return arr.length?arr:["eth"];
+}
+function toggleAuto(on){ autoOn=on; startTimer(); }
+function toggleSpam(on){ hideSpam=on; renderDetail(); }
+function toggleOnlyTrades(on){ onlyTrades=on; renderDetail(); }
+function swapStats(list){ let bu=0,se=0,evmB=0,evmS=0,hlPnl=0; (list||[]).forEach(x=>{ if(x.type==="BUY") bu++; else se++; if(x.closed_pnl!=null){ hlPnl+=x.closed_pnl; } else { if(x.type==="BUY") evmB+=x.value_usd; else evmS+=x.value_usd; } }); return {buys:bu,sells:se,realized_pnl_usd:hlPnl+(evmS-evmB),window:(list||[]).length}; }
+
+async function openDetail(skel){
+  if(!sel) return; const cur=sel; const key=detailKey(cur);
+  const c=detailCache[key];
+  if(skel && c && Date.now()-c.ts<45000){
+    cache={...c.snap, updated:c.ts}; renderDetail();  // 命中快照，秒开
+    startTimer(); loadAll(cur);                        // 后台静默刷新
+    return;
+  }
+  if(skel){ cache={port:null,bal:null,hist:null,pnl:null,swaps:null,hl:null,updated:0}; document.getElementById("detail").innerHTML=renderShell(); }
+  startTimer(); await loadAll(cur);
+}
+// 刷新失败时保留旧的好数据，避免面板过段时间被错误/空覆盖成一片「—」
+const _portGood=v=>v&&!v.__err&&v.tokens; const _balGood=v=>v&&!v.__err;
+async function loadAll(cur){
+  cur=cur||sel; if(!cur) return; const tag=JSON.stringify(cur);
+  const isEvm = cur.category==="evm", isEvmM = isEvm && MORALIS;
+  const addr=encodeURIComponent(cur.address);
+  if(isEvmM){
+    cache.bal=null;
+    // HL 与持仓并发起飞；持仓先到即渲染，随后只对有余额的链查买卖
+    const pHl=api(`/api/hyperliquid?address=${addr}&fills=1`).then(d=>cache.hl=d).catch(()=>{});
+    try{ cache.port=await api(`/api/portfolio?address=${addr}`); }catch(e){ if(!_portGood(cache.port)) cache.port={__err:e.message}; }
+    if(JSON.stringify(sel)!==tag) return;
+    cache.updated=Date.now(); renderDetail();
+    await Promise.all([ pHl, loadStreamInto(cur) ]);
+  } else {
+    cache.port=null;
+    const tasks=[ api(`/api/balance?chain=${cur.chain}&address=${addr}`).then(d=>cache.bal=d).catch(e=>{ if(!_balGood(cache.bal)) cache.bal={__err:e.message}; }) ];
+    if(isEvm){ tasks.push(api(`/api/hyperliquid?address=${addr}&fills=1`).then(d=>cache.hl=d).catch(()=>{})); } else cache.hl=null;
+    tasks.push(loadStreamInto(cur));
+    await Promise.all(tasks);
+  }
+  if(JSON.stringify(sel)!==tag) return;
+  cache.updated=Date.now(); renderDetail();
+  const dkeys=Object.keys(detailCache);  // 快照上限 20 个，先淘汰最旧，防内存无限增长
+  if(dkeys.length>=20){ let old=dkeys[0]; for(const k of dkeys) if(detailCache[k].ts<detailCache[old].ts) old=k; delete detailCache[old]; }
+  detailCache[detailKey(cur)]={ snap:{port:cache.port,bal:cache.bal,hist:cache.hist,pnl:cache.pnl,swaps:cache.swaps,hl:cache.hl}, ts:Date.now() };
+}
+async function loadStreamInto(cur){
+  if(cur.category==="evm" && MORALIS){
+    cache.hist=null; cache.pnl=null;
+    const ac=activeChains().join(",");  // 只查有余额/常用的链
+    try{ cache.swaps=await api(`/api/swaps?address=${encodeURIComponent(cur.address)}&chains=${ac}&limit=20`); }
+    catch(e){ if(!(cache.swaps&&cache.swaps.swaps)) cache.swaps={__err:e.message}; }
+    return;
+  }
+  cache.swaps=null;
+  const q=`chain=${cur.chain}&address=${encodeURIComponent(cur.address)}`;
+  const [h,p]=await Promise.allSettled([api(`/api/history?${q}&limit=40`), api(`/api/pnl?${q}&limit=50`)]);
+  if(h.status==="fulfilled") cache.hist=h.value; else if(!(cache.hist&&!cache.hist.__err)) cache.hist={__err:h.reason&&h.reason.message};
+  if(p.status==="fulfilled") cache.pnl=p.value; else if(!(cache.pnl&&cache.pnl.available)) cache.pnl={available:false};
+}
+async function refreshStream(){ if(document.hidden) return;  // 后台标签页不刷新，省免费额度
+  const cur=sel; if(!cur) return; const tag=JSON.stringify(cur);
+  const tasks=[loadStreamInto(cur)];
+  if(cur.category==="evm"){ tasks.push(api(`/api/hyperliquid?address=${encodeURIComponent(cur.address)}&fills=1`).then(d=>cache.hl=d).catch(()=>{})); }
+  await Promise.all(tasks);
+  if(JSON.stringify(sel)!==tag) return; cache.updated=Date.now(); renderDetail(); }
+
+function renderShell(){
+  return `<div class="det-head"><div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
+    <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span></div>
+    <div class="ad mono">${esc(sel.address)}${copyBtn(sel.address)}</div></div></div><div class="spinner">读取链上数据…</div>`;
+}
+function chainTabsHTML(){
+  const port=cache.port; const usdByChain={}; if(port&&port.chains) port.chains.forEach(c=>usdByChain[c.chain]=c.usd);
+  const isM = sel.category==="evm"&&MORALIS;
+  let chips=EVM_CHAINS.filter(chainUsable).map(id=>{
+    const u=usdByChain[id]; const utxt=(u!=null&&u>0)?`<span class="u">${usd(u)}</span>`:"";
+    const active = isM ? chainFilter===id : sel.chain===id;
+    return `<span class="chain-tab ${active?"active":""}" onclick="switchChain('${id}')">${id.toUpperCase()}${utxt}</span>`;
+  }).join("");
+  if(isM){
+    chips = `<span class="chain-tab ${chainFilter==null?"active":""}" onclick="setChainFilter(null)">全部</span>` + chips;
+    if(cache.hl && cache.hl.total_usd) chips += `<span class="chain-tab ${chainFilter==='HL'?"active":""}" title="Hyperliquid（独立永续/现货 DEX）" onclick="setChainFilter('HL')">⚡HL ${usd(cache.hl.total_usd)}</span>`;
+  } else if(sel.category==="evm"){
+    // 未启用 Moralis：HL 免 key 照样能筛（再点一次取消）；并提示如何解锁「全部」
+    if(cache.hl && cache.hl.total_usd) chips += `<span class="chain-tab ${chainFilter==='HL'?"active":""}" title="Hyperliquid（独立永续/现货 DEX），再点一次取消筛选" onclick="setChainFilter(${chainFilter==='HL'?'null':"'HL'"})">⚡HL ${usd(cache.hl.total_usd)}</span>`;
+    chips += `<span style="color:var(--muted-2);font-size:12px;align-self:center">配置 MORALIS_API_KEY 后解锁「全部」多链聚合</span>`;
+  }
+  return `<div class="chain-tabs"><span style="color:var(--muted);font-size:12px;margin-right:4px">链分布（点击筛选）</span>${chips}</div>`;
 }
 
-function histHTML(h) {
-  if (h.note) return `<div class="note" style="padding:14px">${esc(h.note)}</div>`;
-  if (!h.actions || !h.actions.length) return `<div class="empty">暂无可解析的交易</div>`;
-  const rows = h.actions.map(a => `
-    <tr>
-      <td><span class="badge b-${a.type}">${TYPE_LABEL[a.type]||a.type}</span></td>
-      <td>${esc(a.summary)}</td>
-      <td class="t-time">${ago(a.timestamp)}前</td>
-      <td><a href="${a.explorer_url}" target="_blank" rel="noopener">↗</a></td>
-    </tr>`).join("");
-  return `<table><thead><tr><th>类型</th><th>详情</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+function renderDetail(){
+  if(inAnalysis) return;  // 分析模块占用详情区时，不被后台行情刷新覆盖
+  if(!sel) return;
+  const isEvmM = sel.category==="evm" && MORALIS;
+  const port=cache.port, b=cache.bal, h=cache.hist;
+
+  const isEvm = sel.category==="evm";
+  const evmSwaps=(cache.swaps && cache.swaps.swaps) ? cache.swaps.swaps.map(s=>({...s, venue:s.chain})) : [];
+  const hlFills=(cache.hl && cache.hl.fills) ? cache.hl.fills : [];
+  const merged=[...evmSwaps, ...hlFills].sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
+  const fmerged = chainFilter ? merged.filter(x=>x.venue===chainFilter) : merged;
+  const rollup = isEvm ? coinRollup(fmerged) : [];
+  const stats = isEvm ? swapStats(fmerged)
+    : (cache.pnl&&cache.pnl.available ? {buys:cache.pnl.buys,sells:cache.pnl.sells,realized_pnl_usd:cache.pnl.realized_pnl_usd,window:cache.pnl.window} : null);
+
+  let walletUsd=null, nativeStr="—", tokenCount=null;
+  if(isEvmM && port && !port.__err){ walletUsd=port.total_usd; tokenCount=(port.tokens||[]).length; }
+  else if(b && !b.__err){ walletUsd=b.extra?b.extra.total_usd:null; nativeStr=`${fmt(b.native_amount)} ${esc(b.native_symbol)}`; }
+  const hlUsd = cache.hl&&cache.hl.total_usd ? cache.hl.total_usd : 0;
+  const totalUsd = (walletUsd!=null||hlUsd>0) ? (walletUsd||0)+hlUsd : null;
+
+  const realized = stats? stats.realized_pnl_usd : null;
+  const hasTrades = stats && (stats.buys||stats.sells);
+  const pnlCls=realized==null?"":(realized>=0?"pos":"neg");
+
+  const head=`<div class="det-head">
+    <div class="avatar" style="${avatarStyle(sel.address)}">${esc((sel.label||sel.address).slice(0,1).toUpperCase())}</div>
+    <div class="info"><div class="nm">${esc(sel.label||"未命名")} <span class="chip">${sel.category==="evm"?"EVM":sel.chain}</span>${totalUsd!=null?" "+tierBadge(totalUsd):""}</div>
+      <div class="ad mono">${esc(sel.address)}${copyBtn(sel.address)}</div></div>
+    <div class="total"><div class="big">${totalUsd!=null?usd(totalUsd):nativeStr}</div>
+      <div class="sub">${hlUsd>0?`钱包 ${usd(walletUsd||0)} · ⚡Hyperliquid ${usd(hlUsd)}`:(isEvmM&&port&&!port.__err?`${tokenCount} 个代币 · ${(port.chains||[]).length} 条链`:(walletUsd!=null?nativeStr:"原生币余额"))}</div></div></div>`;
+
+  const chainTabs = sel.category==="evm" ? chainTabsHTML() : "";
+
+  const hasUnreal = rollup.some(r=>r.upnl!=null);
+  const unrealized = hasUnreal ? rollup.reduce((s,r)=>s+(r.upnl||0),0) : null;
+  const uCls = unrealized==null?"":(unrealized>=0?"pos":"neg");
+  const pnlScope = isEvmM ? (chainFilter?chainFilter.toUpperCase():"全链") : sel.chain.toUpperCase();
+  const stats_html=`<div class="stats">
+    <div class="stat"><div class="k">总资产${hlUsd>0?"（含HL）":""}</div><div class="v">${totalUsd!=null?usd(totalUsd):"—"}</div></div>
+    <div class="stat"><div class="k">浮动盈亏 <span class="help" title="未平仓持仓按当前价的浮盈/浮亏（Hyperliquid）。EVM 现货持仓暂不计入。">?</span></div>
+      <div class="v ${uCls}">${unrealized!=null?(unrealized>=0?"+":"")+usd(unrealized):"—"}</div></div>
+    <div class="stat"><div class="k">已实现盈亏 <span class="help" title="卖出/平仓锁定的盈亏：HL 平仓 closedPnl + EVM 卖出回款−买入成本（近期可见）。">?</span></div>
+      <div class="v ${pnlCls}">${hasTrades?(realized>=0?"+":"")+usd(realized):"—"} <small>${pnlScope}</small></div></div>
+    <div class="stat"><div class="k">买/卖（近${stats?stats.window:0}笔）</div><div class="v">${stats?`${stats.buys}/${stats.sells}`:"—"}</div></div></div>`;
+
+  const last=cache.updated?`更新于 ${ago(Math.floor(cache.updated/1000))}前`:"";
+  const histToggles = (activeTab==="tx" && !isEvm) ?
+    `<label class="switch"><input type="checkbox" ${onlyTrades?"checked":""} onchange="toggleOnlyTrades(this.checked)"> 只看买卖</label>
+     <label class="switch"><input type="checkbox" ${hideSpam?"checked":""} onchange="toggleSpam(this.checked)"> 隐藏垃圾</label>` : "";
+  const tabs=`<div class="tabs">
+    <div class="tab ${activeTab==="tx"?"active":""}" onclick="switchTab('tx')">动作流</div>
+    <div class="tab ${activeTab==="pf"?"active":""}" onclick="switchTab('pf')">持仓</div>
+    <div class="tabbar-right"><span>${last}</span>${histToggles}
+      <label class="switch"><input type="checkbox" ${autoOn?"checked":""} onchange="toggleAuto(this.checked)"> 自动刷新</label>
+      <button class="btn-ghost refresh-btn" onclick="openDetail(false)">↻ 刷新</button></div></div>`;
+
+  const body=activeTab==="tx"
+    ? (isEvm ? (renderTradeSummary(rollup) + renderTrades(fmerged, cache.swaps&&cache.swaps.__err, totalUsd)) : renderHistory(h))
+    : (renderHL(cache.hl) + (isEvmM ? renderPortfolioMoralis(port) : renderBalance(b)));
+  document.getElementById("detail").innerHTML=head+chainTabs+stats_html+tabs+`<div>${body}</div>`;
+  syncListHeight();
 }
 
+function renderHL(hl){
+  if(!hl || (!hl.account_value && !(hl.positions||[]).length && !(hl.spot||[]).length)) return "";
+  const stale = hl.state_stale ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 账户读取失败，持仓/账户价值为上次成功快照。点「刷新」重试。</div>` : "";
+  if(stale && !(hl.positions||[]).length && !(hl.spot||[]).length) return stale;
+  const allPos=hl.positions||[];
+  const totPos=allPos.reduce((s,p)=>s+Math.abs(p.value_usd||0),0);  // 占比分母=全部仓位价值（不随筛选变）
+  const hlCoins=[...new Set(allPos.map(p=>p.coin||'?'))];
+  let plist=allPos.slice();
+  if(hlCoin) plist=plist.filter(p=>(p.coin||'?')===hlCoin);
+  if(hlSide) plist=plist.filter(p=>p.side===hlSide);
+  if(hlSort){ const kf={value:p=>Math.abs(p.value_usd||0), pct:p=>Math.abs(p.value_usd||0), upnl:p=>p.unrealized_pnl||0, size:p=>Math.abs(p.size||0)}[hlSort];
+    if(kf) plist.sort((a,b)=>{ const av=kf(a), bv=kf(b); return hlDir==="desc"?bv-av:av-bv; }); }
+  const coinSel=`<select class="th-filter" onchange="setHlCoin(this.value)"><option value="">全部</option>${hlCoins.map(c=>`<option value="${esc(c)}" ${hlCoin===c?'selected':''}>${esc(c)}</option>`).join("")}</select>`;
+  const sideSel=`<select class="th-filter" onchange="setHlSide(this.value)"><option value="">全部</option><option value="多" ${hlSide==='多'?'selected':''}>多</option><option value="空" ${hlSide==='空'?'selected':''}>空</option></select>`;
+  const hs=(k)=>`<span class="th-sort ${hlSort===k?'on':''}" onclick="setHlSort('${k}')">${hlSort===k?(hlDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+  const prows=plist.map(p=>{
+    const pct = totPos>0 ? Math.abs(p.value_usd||0)/totPos*100 : null;
+    const pctCell = pct!=null
+      ? `<div style="display:flex;align-items:center;gap:6px"><div style="flex:0 0 42px;height:5px;background:#eef0f4;border-radius:3px;overflow:hidden"><div style="width:${Math.min(pct,100)}%;height:100%;background:var(--accent)"></div></div><span style="color:var(--muted);font-size:11px">${pct.toFixed(1)}%</span></div>`
+      : '—';
+    return `<tr>
+    <td><b>${esc(p.coin||'?')}</b>${coinCN(p.coin)?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(coinCN(p.coin))}</span>`:''}</td>
+    <td><span class="badge ${p.side==='多'?'b-BUY':'b-SELL'}">${p.side}${p.leverage?` ${p.leverage}x`:''}</span></td>
+    <td class="amt-cell">${usd(p.value_usd)}</td>
+    <td>${pctCell}</td>
+    <td class="amt-cell ${p.unrealized_pnl>=0?'pos':'neg'}">${(p.unrealized_pnl>=0?'+':'')+usd(p.unrealized_pnl)}</td>
+    <td class="t-time">${fmt(Math.abs(p.size))} ${esc(p.coin||'')}</td></tr>`;
+  }).join("");
+  const pbody = prows || `<tr><td colspan="6" class="note">无符合筛选的持仓</td></tr>`;
+  const ptable=allPos.length
+    ? `<table><thead><tr><th>币种 ${coinSel}</th><th>方向/杠杆 ${sideSel}</th><th>仓位价值 ${hs('value')}</th><th title="该仓位价值 ÷ 全部仓位价值">占比 ${hs('pct')}</th><th>未实现盈亏 ${hs('upnl')}</th><th>数量 ${hs('size')}</th></tr></thead><tbody>${pbody}</tbody></table>`
+    : `<div class="note">无永续持仓</div>`;
+  const srows=(hl.spot||[]).map(s=>`<div class="pf-row"><div class="coin" style="${avatarStyle(s.coin)}">${esc((s.coin||'?').slice(0,3))}</div>
+    <div class="sym">${esc(s.coin||'?')} <span class="chip">HL现货</span><div class="sub2">${fmt(s.amount)}</div></div>
+    <div class="amt"><div class="v">${s.usd?usd(s.usd):"—"}</div></div></div>`).join("");
+  return `<div class="hl-block"><div class="hl-head">⚡ Hyperliquid <span class="hl-val">账户价值 ${usd(hl.account_value)}${hl.spot_usd?` · 现货 ${usd(hl.spot_usd)}`:""}</span></div>${stale}${ptable}${srows}</div>`;
+}
+
+// 按币种汇总成交，并结合当前持仓/现价计算浮动盈亏(HL 用真实值，EVM 用现价估算)
+function coinRollup(list){
+  const m={};
+  (list||[]).forEach(t=>{
+    const k=t.token_symbol||'?';
+    const g=m[k]||(m[k]={coin:k,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0,venue:''});
+    if(!g.venue) g.venue=t.venue||'';
+    if(t.type==="BUY"){ g.buys++; g.buyAmt+=t.token_amount; g.buyVal+=t.value_usd; }
+    else { g.sells++; g.sellAmt+=t.token_amount; g.sellVal+=t.value_usd; }
+    if(t.closed_pnl!=null) g.realized+=t.closed_pnl;
+  });
+  const pos={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>pos[p.coin]=p);
+  const portMap={}; ((cache.port&&cache.port.tokens)||[]).forEach(t=>{ portMap[(t.symbol||'').toUpperCase()]=t; });
+  const mids=(cache.hl&&cache.hl.mids)||{};
+  Object.keys(pos).forEach(c=>{ if(!m[c]) m[c]={coin:c,buys:0,sells:0,buyAmt:0,sellAmt:0,buyVal:0,sellVal:0,realized:0,venue:'HL'}; });
+  const rows=Object.values(m).map(g=>{
+    const p=pos[g.coin]; const pt=portMap[(g.coin||'').toUpperCase()];
+    const avg = p ? p.entry_px : (g.buyAmt>0 ? g.buyVal/g.buyAmt : null);
+    let cur=null, posVal=null, upnl=null, isHL=false, side='', lev=null;
+    if(p){ isHL=true; side=p.side; lev=p.leverage||null; cur=(p.size? p.value_usd/Math.abs(p.size) : p.entry_px); posVal=p.value_usd; upnl=p.unrealized_pnl; }
+    else if(pt){ cur=(pt.price!=null?pt.price:null); posVal=(pt.usd_value!=null?pt.usd_value:null);
+      if(avg!=null && cur!=null && pt.amount) upnl=(cur-avg)*pt.amount; }  // EVM 浮盈估算=(现价-买入均价)×持仓
+    if(cur==null && mids[g.coin]!=null) cur=mids[g.coin];  // 已平仓的币用盘口价兜底显示现价
+    const venue = isHL ? 'HL' : (g.venue || (pt?pt.chain:'') || '');
+    return { coin:g.coin, buys:g.buys, sells:g.sells, net:g.buyAmt-g.sellAmt, realized:g.realized, avg, cur, posVal, upnl, isHL, side, lev, venue };
+  });
+  rows.sort((a,b)=> (Math.abs(b.posVal||0)+b.buys+b.sells) - (Math.abs(a.posVal||0)+a.buys+a.sells));
+  return rows;
+}
+function renderTradeSummary(rows){
+  if(!rows || !rows.length) return "";
+  const totPos=rows.reduce((s,r)=>s+Math.abs(r.posVal||0),0);  // 总持仓金额(全部，作占比分母)
+  const coins=[...new Set(rows.map(r=>r.coin))];
+  let list=rows.slice();
+  if(sumCoin) list=list.filter(r=>r.coin===sumCoin);
+  if(sumSort){
+    const kf={trades:r=>r.buys+r.sells, net:r=>r.net, avg:r=>r.avg||0, cur:r=>r.cur||0, pos:r=>Math.abs(r.posVal||0), lev:r=>r.lev||0, pct:r=>Math.abs(r.posVal||0), upnl:r=>r.upnl||0, realized:r=>r.realized||0}[sumSort];
+    if(kf) list.sort((a,b)=>{ const av=kf(a), bv=kf(b); return sumDir==="desc"?bv-av:av-bv; });
+  }
+  const coinSel=`<select class="th-filter" onchange="setSumCoin(this.value)"><option value="">全部</option>${coins.map(c=>`<option value="${esc(c)}" ${sumCoin===c?'selected':''}>${esc(c)}</option>`).join("")}</select>`;
+  const ss=(k)=>`<span class="th-sort ${sumSort===k?'on':''}" onclick="setSumSort('${k}')">${sumSort===k?(sumDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+  const trs=list.slice(0,20).map(g=>{
+    const pct=(g.posVal!=null && totPos>0)?Math.abs(g.posVal)/totPos*100:null;
+    const pctCell = pct!=null
+      ? `<div style="display:flex;align-items:center;gap:6px"><div style="flex:0 0 42px;height:5px;background:#eef0f4;border-radius:3px;overflow:hidden"><div style="width:${Math.min(pct,100)}%;height:100%;background:var(--accent)"></div></div><span style="color:var(--muted);font-size:11px">${pct.toFixed(1)}%</span></div>`
+      : '—';
+    return `<tr>
+      <td><b>${esc(g.coin)}</b>${coinCN(g.coin)?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(coinCN(g.coin))}</span>`:''} ${g.venue?`<span class="chip"${g.venue==='HL'?' title="Hyperliquid"':''}>${g.venue==='HL'?'⚡HL':esc(String(g.venue).toUpperCase())}</span>`:''}</td>
+      <td${(g.buys+g.sells===0 && g.posVal!=null)?' title="持仓建于更早成交，不在近期窗口内"':''}>${g.buys}/${g.sells}</td>
+      <td class="${g.net>=0?'pos':'neg'}">${(g.net>=0?'+':'')+fmt(g.net)}</td>
+      <td>${price(g.avg)}</td>
+      <td>${price(g.cur)}</td>
+      <td>${g.posVal!=null?(g.isHL?`<span class="${g.side==='多'?'pos':'neg'}">${g.side}</span> `:'')+usd(g.posVal):'—'}</td>
+      <td>${g.lev?`<span class="chip" title="当前持仓杠杆">${g.lev}x</span>`:'—'}</td>
+      <td>${pctCell}</td>
+      <td>${g.upnl!=null?`<span class="${g.upnl>=0?'pos':'neg'}">${(g.upnl>=0?'+':'')+usd(g.upnl)}</span>`:'—'}</td>
+      <td>${g.realized?`<span class="${g.realized>=0?'pos':'neg'}">${(g.realized>=0?'+':'')+usd(g.realized)}</span>`:'—'}</td></tr>`;
+  }).join("");
+  return `<div class="summary-block"><div class="summary-head">币种汇总</div>
+    <div class="scroll-sm"><table><thead><tr>
+      <th>币种 ${coinSel}</th><th>买/卖 ${ss('trades')}</th><th>净数量 ${ss('net')}</th><th>持仓均价 ${ss('avg')}</th>
+      <th>现价 ${ss('cur')}</th><th>持仓金额 ${ss('pos')}</th><th title="该币当前持仓的杠杆设置">杠杆 ${ss('lev')}</th><th>占比 ${ss('pct')}</th><th>浮动盈亏 ${ss('upnl')}</th><th>已实现盈亏 ${ss('realized')}</th>
+    </tr></thead><tbody>${trs}</tbody></table></div></div>`;
+}
+function tradeBadge(s){
+  const d=s.dir||"";
+  if(/open\s*long/i.test(d)) return {t:"开多",c:"b-open-long"};
+  if(/close\s*long/i.test(d)) return {t:"平多",c:"b-close-long"};
+  if(/open\s*short/i.test(d)) return {t:"开空",c:"b-open-short"};
+  if(/close\s*short/i.test(d)) return {t:"平空",c:"b-close-short"};
+  return s.type==="BUY" ? {t:"买入",c:"b-BUY"} : {t:"卖出",c:"b-SELL"};
+}
+function renderTrades(list, err, total){
+  if(!list || !list.length){
+    if(err) return `<div class="note">买卖查询失败：${esc(err)}</div>`;
+    if(cache.hl && cache.hl.fills_error && chainFilter!=='HL')
+      return `<div class="note">⚠️ Hyperliquid 成交记录读取超时/失败（大户成交量大、跨境访问不稳定），并非真的没有交易。点右上「刷新」重试。</div>`;
+    return `<div class="note">该钱包近期没有买卖记录${chainFilter?`（${chainFilter==='HL'?'Hyperliquid':chainFilter.toUpperCase()}）`:"（EVM DEX 与 Hyperliquid 均无）"}。</div>`;
+  }
+  const types=[...new Set(list.map(s=>tradeBadge(s).t))];
+  const coins=[...new Set(list.map(s=>s.token_symbol||'?'))];
+  let shown=list.slice();
+  if(typeFilter) shown=shown.filter(s=>tradeBadge(s).t===typeFilter);
+  if(coinFilter) shown=shown.filter(s=>(s.token_symbol||'?')===coinFilter);
+  if(sortKey){ const k={amount:'token_amount',price:'price_usd',value:'value_usd',time:'timestamp'}[sortKey];
+    shown.sort((a,b)=>{ const av=+a[k]||0, bv=+b[k]||0; return sortDir==='desc'?bv-av:av-bv; }); }
+  const totalShown=shown.length;
+  if(totalShown>500) shown=shown.slice(0,500);  // 高频钱包成交上千条，渲染截断（筛选/排序已先生效）
+
+  const selBox=(cur,onCh,items)=>`<select class="th-filter" onchange="${onCh}(this.value)"><option value="">全部</option>${items.map(t=>`<option value="${esc(t)}" ${cur===t?'selected':''}>${esc(t)}</option>`).join("")}</select>`;
+  const sortBtn=(k)=>`<span class="th-sort ${sortKey===k?'on':''}" onclick="setSort('${k}')">${sortKey===k?(sortDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+  const levMap={}; ((cache.hl&&cache.hl.positions)||[]).forEach(p=>{ if(p.leverage) levMap[p.coin]=p.leverage; });
+
+  const rows=shown.map(s=>{
+    const bd=tradeBadge(s);
+    const venueChip = s.venue==='HL'
+      ? `<span class="chip" title="Hyperliquid 永续/现货成交">⚡HL</span>`
+      : `<span class="chip">${(s.venue||s.chain||'').toUpperCase()}</span>`;
+    const pnl = (s.closed_pnl!=null && s.closed_pnl!==0) ? ` · <span class="${s.closed_pnl>=0?'pos':'neg'}">${(s.closed_pnl>=0?'+':'')+usd(s.closed_pnl)}</span>` : '';
+    const lev = s.venue==='HL' ? (s.leverage||levMap[s.token_symbol]) : null;
+    return `<tr>
+      <td><span class="badge ${bd.c}">${bd.t}</span></td>
+      <td><b>${esc(s.token_symbol)}</b> ${venueChip}</td>
+      <td>${lev?`<span class="chip" title="该币当前持仓的杠杆设置（HL 成交不含历史杠杆）">${lev}x</span>`:'—'}</td>
+      <td class="amt-cell">${fmt(s.token_amount)}</td>
+      <td>${price(s.price_usd)}</td>
+      <td class="amt-cell">${usd(s.value_usd)}${pnl}</td>
+      <td style="color:var(--muted)">${(total>=1 && s.value_usd!=null)?(s.value_usd/total*100).toFixed(2)+'%':'—'}</td>
+      <td class="t-time" title="${ago(s.timestamp)}前">${fmtDate(s.timestamp)}</td>
+      <td>${s.explorer_url?`<a href="${s.explorer_url}" target="_blank" rel="noopener">↗</a>`:""}</td></tr>`;
+  }).join("");
+  const truncNote = totalShown>500 ? `<tr><td colspan="9" class="note">已显示前 500 条（筛选后共 ${totalShown} 条），用「类型/币种」下拉可缩小范围。</td></tr>` : '';
+  const tbody = (rows ? rows+truncNote : `<tr><td colspan="9" class="note">无符合筛选的记录</td></tr>`);
+  const staleNote = (cache.hl && cache.hl.fills_stale && chainFilter!=='HL')
+    ? `<div class="note" style="padding:8px 18px">ℹ️ 本次 Hyperliquid 成交读取为空/超时，已沿用上次成功抓到的记录（更新于 ${ago(cache.hl.fills_as_of)}前）。点「刷新」重试。</div>` : '';
+  return staleNote + `<div class="scroll-area"><table><thead><tr>
+    <th>类型 ${selBox(typeFilter,'setTypeFilter',types)}</th>
+    <th>币种/来源 ${selBox(coinFilter,'setCoinFilter',coins)}</th>
+    <th title="该币当前持仓的杠杆设置（HL 成交不含历史杠杆）">杠杆</th>
+    <th>数量 ${sortBtn('amount')}</th>
+    <th>价格 ${sortBtn('price')}</th>
+    <th>金额(USD) ${sortBtn('value')}</th>
+    <th title="这笔金额 ÷ 该钱包总资产">占资产</th>
+    <th>时间 ${sortBtn('time')}</th>
+    <th></th></tr></thead><tbody>${tbody}</tbody></table></div>`;
+}
+
+function renderPortfolioMoralis(port){
+  if(!port||port.__err) return `<div class="note">持仓查询失败：${esc(port&&port.__err||"未知错误")}（可在 .env 配置 MORALIS_API_KEY）</div>`;
+  if(!port.tokens||!port.tokens.length) return `<div class="note">未发现有价值的代币持仓（垃圾币已过滤）。</div>`;
+  const rows=port.tokens.slice(0,80).map(t=>`<div class="pf-row">
+    <div class="coin" style="${avatarStyle(t.symbol+(t.contract||''))}">${esc((t.symbol||'?').slice(0,3))}</div>
+    <div class="sym">${esc(t.symbol||'?')} <span class="chip">${t.chain}</span>
+      <div class="sub2">${fmt(t.amount)}${t.price?` · ${price(t.price)}`:""}</div></div>
+    <div class="amt"><div class="v">${usd(t.usd_value)}</div></div></div>`).join("");
+  const more = port.tokens.length>80 ? `<div class="note">仅显示前 80 个，共 ${port.tokens.length} 个。</div>` : "";
+  return rows + more;
+}
+function renderBalance(b){
+  if(!b||b.__err) return `<div class="note">余额查询失败：${esc(b&&b.__err||"未知错误")}</div>`;
+  const price=b.extra&&b.extra.native_price;
+  let rows=`<div class="pf-row"><div class="coin" style="${avatarStyle(b.native_symbol)}">${esc(b.native_symbol.slice(0,3))}</div>
+    <div class="sym">${esc(b.native_symbol)} <span style="color:var(--muted);font-weight:500">原生币</span><div class="sub2">${fmt(b.native_amount)}</div></div>
+    <div class="amt"><div class="v">${b.extra&&b.extra.native_usd!=null?usd(b.extra.native_usd):(price?usd(b.native_amount*price):"—")}</div></div></div>`;
+  (b.tokens||[]).forEach(t=>{ rows+=`<div class="pf-row"><div class="coin" style="${avatarStyle(t.symbol+(t.contract||''))}">${esc(t.symbol.slice(0,3))}</div>
+    <div class="sym">${esc(t.symbol)}<div class="sub2">${fmt(t.amount)}</div></div>
+    <div class="amt"><div class="v">${["USDC","USDT","DAI","BUSD"].includes(t.symbol.toUpperCase())?usd(t.amount):"—"}</div></div></div>`; });
+  return rows + (b.extra&&b.extra.note?`<div class="note">${esc(b.extra.note)}</div>`:"");
+}
+function renderHistory(h){
+  if(!h||h.__err) return `<div class="note">交易查询失败：${esc(h&&h.__err||"未知错误")}</div>`;
+  if(h.note) return `<div class="note">${esc(h.note)}</div>`;
+  let acts=h.actions||[];
+  const spam=new Set((cache.port&&cache.port.spam_contracts)||[]);
+  if(hideSpam && spam.size) acts=acts.filter(a=>!(a.token_contract&&spam.has(a.token_contract)));
+  if(onlyTrades) acts=acts.filter(a=>a.type==="BUY"||a.type==="SELL");
+  if(!acts.length) return `<div class="note">${onlyTrades?"近期无买卖记录（取消勾选「只看买卖」可看全部动作）":"暂无可解析的交易记录"}。</div>`;
+  const rows=acts.map(a=>`<tr>
+    <td><span class="badge b-${a.type}">${TYPE_LABEL[a.type]||a.type}</span></td>
+    <td>${esc(a.summary)}</td>
+    <td class="amt-cell">${a.value_usd!=null?`<span class="usd">≈</span>${usd(a.value_usd)}`:"—"}</td>
+    <td class="t-time" title="${ago(a.timestamp)}前">${fmtDate(a.timestamp)}</td>
+    <td><a href="${a.explorer_url}" target="_blank" rel="noopener">↗</a></td></tr>`).join("");
+  return `<table><thead><tr><th>类型</th><th>详情（币种·数量·计价）</th><th>金额(USD)</th><th>时间</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function switchTab(t){ activeTab=t; renderDetail(); }
+
+// ---- 跟踪清单：多选/全选/导入导出/清理 ----
+function evmWallets(){ return walletList.filter(w=>EVM_CHAINS.includes(w.chain) && walletVisible(w)); }  // 只含当前可见的（等级筛选后全选不会波及隐藏项）
+function toggleAnalysis(a,on){ if(on) analysisSet.add(a); else analysisSet.delete(a); updateSelUI(); }
+function updateAnalyzeBtn(){ const b=document.getElementById("analyzeBtn"); if(!b) return; if(analysisSet.size){ b.style.display=""; b.textContent=`分析 (${analysisSet.size})`; } else b.style.display="none"; }
+function updateSelUI(){
+  updateAnalyzeBtn();
+  const b=document.getElementById("selAllBtn"); if(!b) return;
+  const ew=evmWallets();
+  b.style.display = ew.length ? "" : "none";
+  const allSel = ew.length>0 && ew.every(w=>analysisSet.has(w.address));
+  b.textContent = allSel ? "取消全选" : "全选";
+}
+function toggleSelectAll(){
+  const ew=evmWallets(); if(!ew.length) return toast("没有可分析的 EVM 地址");
+  const allSel = ew.every(w=>analysisSet.has(w.address));
+  if(allSel) ew.forEach(w=>analysisSet.delete(w.address));
+  else ew.forEach(w=>analysisSet.add(w.address));
+  document.querySelectorAll(".wsel").forEach(cb=>{ cb.checked=analysisSet.has(cb.dataset.addr); });
+  updateSelUI();
+}
+function exportWallets(){
+  if(!walletList.length) return toast("清单为空");
+  // 勾选了就只导出勾选的；没勾选导出全部
+  const selSet = analysisSet.size ? new Set([...analysisSet].map(a=>(a||'').toLowerCase())) : null;
+  const items = selSet ? walletList.filter(w=>selSet.has((w.address||'').toLowerCase())) : walletList;
+  if(!items.length) return toast("勾选的地址不在清单中");
+  const data=items.map(w=>({chain:w.chain, address:w.address, label:w.label||""}));
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`pocket-wallets-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  toast(`已导出 ${data.length} 个钱包${selSet?"（已勾选）":"（全部）"}`);
+}
+function triggerImport(){ document.getElementById("importFile").click(); }
+function normImportChain(ch,address){ ch=(ch||"").toLowerCase().trim();
+  if(EVM_CHAINS.includes(ch)||ch==="sol"||ch==="btc") return ch;
+  const cat=detectCategory(address); return cat==="evm"?"eth":cat; }
+async function importWallets(input){
+  const file=input.files&&input.files[0]; if(!file){ return; }
+  try{
+    const text=(await file.text()).trim();
+    let raw=[];
+    if(text.startsWith("[")||text.startsWith("{")){
+      const j=JSON.parse(text); const arr=Array.isArray(j)?j:(j.wallets||[]);
+      raw=arr.map(x=>({chain:x.chain, address:(x.address||x.addr||"").trim(), label:x.label||""}));
+    } else {  // 纯文本/CSV：每行 address 或 address,label
+      raw=text.split(/\r?\n/).map(line=>{ const p=line.split(/[,\t]/); return {chain:"", address:(p[0]||"").trim(), label:(p.slice(1).join(",")||"").trim()}; });
+    }
+    const items=raw.filter(x=>x.address).map(x=>({chain:normImportChain(x.chain,x.address), address:x.address, label:x.label})).filter(x=>x.chain);
+    if(!items.length){ toast("文件里没有可导入的地址"); return; }
+    const byChain={}; items.forEach(x=>{ (byChain[x.chain]=byChain[x.chain]||[]).push({address:x.address,label:x.label}); });
+    let added=0,skipped=0,invalid=0;
+    for(const ch of Object.keys(byChain)){
+      try{ const r=await api("/api/wallets/batch",{method:"POST",body:JSON.stringify({chain:ch,items:byChain[ch]})}); added+=r.added||0; skipped+=r.skipped||0; invalid+=r.invalid||0; }
+      catch(e){ invalid+=byChain[ch].length; }
+    }
+    toast(`导入完成：新增 ${added}${skipped?`，已存在 ${skipped}`:""}${invalid?`，无效 ${invalid}`:""}`);
+    await loadWallets();
+  }catch(e){ toast("导入失败："+e.message); }
+  finally{ input.value=""; }
+}
+async function purgeInactive(){
+  if(!walletList.length) return toast("清单为空");
+  const btn=document.getElementById("purgeBtn");
+  if(btn && btn.disabled) return;             // 防连点重复扫描
+  if(btn){ btn.disabled=true; btn.textContent="扫描中…"; }
+  toast("正在并行扫描无交易地址…");
+  let r;
+  try{ r=await api("/api/wallets/scan_inactive",{method:"POST"}); }
+  catch(e){ return toast("扫描失败："+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent="清理无交易"; } }
+  const dead=r.inactive||[];
+  const unv=r.unverified||0;
+  if(!dead.length){
+    return toast(unv>0
+      ? `已检查 ${r.checked} 个：${unv} 个查询失败已保留（可能刚被限流，等半分钟再点一次）`
+      : `已检查 ${r.checked} 个地址，未发现无交易记录的`);
+  }
+  const names=dead.slice(0,15).map(w=>(w.label?w.label+" ":"")+shortAddr(w.address,8,6)).join("\n");
+  const more=dead.length>15?`\n…等共 ${dead.length} 个`:"";
+  const unvNote=unv>0?`\n（另有 ${unv} 个查询失败已保留，稍后可再扫一次）`:"";
+  if(!confirm(`发现 ${dead.length} 个无交易记录的地址，确认移除？${unvNote}\n${names}${more}`)) return;
+  let n=0; for(const w of dead){ try{ await api("/api/wallets/"+w.id,{method:"DELETE"}); n++; }catch(e){} }
+  toast(`已移除 ${n} 个无交易记录的地址`);
+  await loadWallets();
+}
+
+// ---- 多钱包持仓方向分析 ----
+function anHeadHTML(sub){
+  return `<div class="det-head" style="border-bottom:1px solid var(--border)">
+    <div class="avatar" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">📊</div>
+    <div class="info"><div class="nm">多钱包持仓方向分析</div>
+      <div class="ad" style="color:var(--muted)">${sub||''}</div></div>
+    <div style="display:flex;gap:8px;margin-left:auto">
+      <button class="btn-ghost refresh-btn" style="height:32px;padding:0 12px" onclick="refreshAnalysis()">↻ 刷新</button>
+      <button class="btn-ghost refresh-btn" style="height:32px;padding:0 12px" onclick="closeAnalysis()">✕ 关闭</button></div></div>`;
+}
+async function refreshAnalysis(){
+  if(!analysisSet.size) return toast("没有勾选的钱包");
+  const wrap=document.getElementById("anTableWrap"); if(wrap) wrap.innerHTML='<div class="spinner">刷新中…</div>';
+  try{
+    const d=await api("/api/analyze",{method:"POST",body:JSON.stringify({addresses:[...analysisSet]})});
+    if(!inAnalysis) return;
+    analysisData=d;
+    const valid=new Set((d.coins||[]).map(c=>c.coin));
+    anCoins=new Set([...anCoins].filter(c=>valid.has(c)));  // 保留筛选/排序，剔除已消失的币种
+    renderAnalysisPanel();
+    toast("已刷新");
+  }catch(e){ if(inAnalysis && wrap) wrap.innerHTML=`<div class="note">刷新失败：${esc(e.message)}</div>`; }
+}
+function closeAnalysis(){
+  inAnalysis=false; analysisData=null;
+  if(sel){ highlightActive(); openDetail(true); }
+  else document.getElementById("detail").innerHTML='<div class="empty" style="margin:0;border:none">粘贴一个钱包地址并点「查询」，或从左侧选择已跟踪的钱包。</div>';
+  syncListHeight();
+}
+async function analyzeSelected(){
+  if(!analysisSet.size) return toast("请先勾选钱包（卡片左侧勾选框）");
+  inAnalysis=true; analysisData=null; anCat=""; anCoins=new Set(); anMenuOpen=false; anBias=""; anSort=""; anDir="desc"; anOpenCoin=""; stopTimer();
+  document.querySelectorAll('.wcard').forEach(el=>el.classList.remove('active'));
+  document.getElementById("detail").innerHTML=anHeadHTML(`已选 ${analysisSet.size} 个钱包`)+'<div class="spinner">分析中…（读取各钱包 Hyperliquid 持仓）</div>';
+  syncListHeight();
+  try{
+    const d=await api("/api/analyze",{method:"POST",body:JSON.stringify({addresses:[...analysisSet]})});
+    if(!inAnalysis) return; analysisData=d; renderAnalysisPanel();
+  }catch(e){ if(inAnalysis){ document.getElementById("detail").innerHTML=anHeadHTML("")+`<div class="note">分析失败：${esc(e.message)}</div>`; syncListHeight(); } }
+}
+function anCoinList(){ return [...new Set(((analysisData&&analysisData.coins)||[]).map(c=>c.coin))]; }
+function anVisibleCoins(){ return anCoinList().filter(c=>!anCat||coinCat(c)===anCat); }  // 受分类约束
+function setAnCat(v){ anCat=v; anCoins=new Set(); renderAnalysisPanel(); }  // 切分类清空币种多选，避免跨类矛盾
+function anToggleMenu(e){ if(e) e.stopPropagation(); anMenuOpen=!anMenuOpen; renderAnalysisPanel(); }
+function anToggleCoin(c,on){ if(on) anCoins.add(c); else anCoins.delete(c); anApplyTable(); }
+function anSelectAllCoins(){ anCoins=new Set(anVisibleCoins()); anMenuOpen=true; renderAnalysisPanel(); }
+function anClearCoins(){ anCoins=new Set(); anMenuOpen=true; renderAnalysisPanel(); }
+function setAnBias(v){ anBias=v; anApplyTable(); }
+function setAnSort(k){ if(anSort===k){ anDir = anDir==="desc"?"asc":"desc"; } else { anSort=k; anDir="desc"; } anApplyTable(); }
+function anToggleDetail(coin){ anOpenCoin = anOpenCoin===coin ? "" : coin; anApplyTable(); }
+function anJumpWallet(addr){  // 从分析明细跳到该钱包详情
+  const w=walletList.find(x=>(x.address||'').toLowerCase()===(addr||'').toLowerCase());
+  if(!w) return toast("该地址不在跟踪清单中");
+  selectWallet(w);  // 会自动退出分析视图
+}
+function renderAnalysisPanel(){
+  const d=analysisData; if(!d) return;
+  const head=anHeadHTML(`${d.wallets} 个钱包 · ${d.with_positions} 个有持仓`)+`<div class="stats">
+    <div class="stat"><div class="k">分析钱包</div><div class="v">${d.wallets} 个</div></div>
+    <div class="stat"><div class="k">有 HL 持仓</div><div class="v">${d.with_positions} 个</div></div>
+    <div class="stat"><div class="k">合计 HL 资产</div><div class="v">${usd(d.total_account_value)}</div></div>
+    <div class="stat"><div class="k">合计浮动盈亏</div><div class="v ${d.total_upnl>=0?'pos':'neg'}">${(d.total_upnl>=0?'+':'')+usd(d.total_upnl)}</div></div></div>`;
+  if(!d.coins||!d.coins.length){ document.getElementById("detail").innerHTML=head+`<div class="note">所选钱包在 Hyperliquid 上没有可分析的持仓。</div>`; syncListHeight(); return; }
+  // 分类计数
+  const catCount={crypto:0,stock:0,futures:0,other:0}; anCoinList().forEach(c=>catCount[coinCat(c)]++);
+  const catChip=(v,label,n)=>`<span class="chip-c ${anCat===v?'on':''}" onclick="setAnCat('${v}')">${label}${n!=null?` ${n}`:''}</span>`;
+  const catRow=`<span class="an-cats">${catChip('','全部',anCoinList().length)}${catChip('crypto','加密',catCount.crypto)}${catChip('stock','股票',catCount.stock)}${catChip('futures','期货',catCount.futures)}${catChip('other','其它',catCount.other)}</span>`;
+  // 币种多选菜单：仅列出当前分类下的币种，按四类分组
+  let menu="";
+  if(anMenuOpen){
+    const groups={crypto:[],stock:[],futures:[],other:[]}; anVisibleCoins().forEach(c=>groups[coinCat(c)].push(c));
+    const tools=`<div class="cat-row"><span onclick="anSelectAllCoins()">全选</span><span onclick="anClearCoins()">清空</span></div>`;
+    const grp=(key)=>groups[key].length?`<div class="mg">${CAT_CN[key]}</div>`+groups[key].map(c=>{
+      const nm=coinCN(c);
+      return `<label><input type="checkbox" value="${esc(c)}" ${anCoins.has(c)?'checked':''} onchange="anToggleCoin(this.value,this.checked)"><span>${esc(c)}${nm?` <span style="color:var(--muted-2)">${esc(nm)}</span>`:''}</span></label>`;
+    }).join(""):"";
+    const bodyHtml=CATS.map(grp).join("")||`<div class="mg" style="color:var(--muted-2)">该分类下无持仓</div>`;
+    menu=`<div class="th-menu" id="anCoinMenu">${tools}${bodyHtml}</div>`;
+  }
+  const biases=[...new Set(d.coins.map(c=>c.bias))];
+  const bar=`<div class="an-filter">
+    <div class="an-fl"><span class="an-fl-k">分类</span>${catRow}</div>
+    <div class="an-fl"><span class="an-fl-k">币种</span>
+      <div class="th-multi"><span class="th-btn" id="anCoinBtn" onclick="anToggleMenu(event)">多选筛选${anCoins.size?` · ${anCoins.size}`:''} ▾</span>${menu}</div></div>
+    <div class="an-fl"><span class="an-fl-k">方向共识</span>
+      <select class="th-filter" style="max-width:none;font-size:12px" onchange="setAnBias(this.value)"><option value="">全部</option>${biases.map(b=>`<option value="${esc(b)}" ${anBias===b?'selected':''}>${esc(b)}</option>`).join("")}</select></div>
+  </div>`;
+  document.getElementById("detail").innerHTML=head+bar+`<div class="scroll-area"><div id="anTableWrap"></div></div>`;
+  anApplyTable();
+}
+function anApplyTable(){
+  const d=analysisData; if(!d) return; const wrap=document.getElementById("anTableWrap"); if(!wrap) return;
+  let list=d.coins.slice();
+  if(anCat) list=list.filter(c=>coinCat(c.coin)===anCat);
+  if(anCoins.size) list=list.filter(c=>anCoins.has(c.coin));
+  if(anBias) list=list.filter(c=>c.bias===anBias);
+  if(anSort){ const kf={cur:c=>c.cur_price||0, longN:c=>c.long_notional||0, longA:c=>c.long_avg||0, shortN:c=>c.short_notional||0, shortA:c=>c.short_avg||0, net:c=>c.net_notional||0, upnl:c=>c.upnl||0}[anSort];
+    if(kf) list.sort((a,b)=>{ const av=kf(a), bv=kf(b); return anDir==="desc"?bv-av:av-bv; }); }
+  const ss=(k)=>`<span class="th-sort ${anSort===k?'on':''}" onclick="setAnSort('${k}')">${anSort===k?(anDir==='desc'?'↓':'↑'):'⇅'}</span>`;
+  const rows=list.map(c=>{
+    const badge=c.bias==='一致做多'?'b-open-long':c.bias==='一致做空'?'b-open-short':'b-SWAP';
+    const cn=coinCN(c.coin);
+    const open=anOpenCoin===c.coin;
+    let sub="";
+    if(open && (c.wallets||[]).length){
+      const tot=(c.long_notional||0)+(c.short_notional||0);
+      const drows=c.wallets.map(d=>{
+        const w=walletList.find(x=>(x.address||'').toLowerCase()===d.address);
+        const nm=customNames[d.address]||(w&&w.label)||shortAddr(d.address,8,6);
+        const pct=tot>0?(d.notional/tot*100).toFixed(1)+'%':'—';
+        return `<tr>
+          <td><span class="an-wlink" title="打开该钱包详情" onclick="event.stopPropagation();anJumpWallet('${d.address}')">${esc(nm)}</span>
+            <span class="mono" style="color:var(--muted-2);font-size:11px">${shortAddr(d.address,6,4)}</span></td>
+          <td><span class="badge ${d.side==='多'?'b-BUY':'b-SELL'}">${d.side}${d.leverage?` ${d.leverage}x`:''}</span></td>
+          <td>${fmt(d.size)}</td>
+          <td class="amt-cell">${usd(d.notional)}</td>
+          <td>${d.entry_px!=null?price(d.entry_px):'—'}</td>
+          <td class="${d.upnl>=0?'pos':'neg'}">${(d.upnl>=0?'+':'')+usd(d.upnl)}</td>
+          <td style="color:var(--muted)">${pct}</td></tr>`;
+      }).join("");
+      sub=`<tr class="an-sub"><td colspan="10"><div class="an-sub-box">
+        <table><thead><tr><th>钱包</th><th>方向/杠杆</th><th>数量</th><th>名义价值</th><th>开仓均价</th><th>浮动盈亏</th><th title="占该币多空名义合计">占比</th></tr></thead>
+        <tbody>${drows}</tbody></table></div></td></tr>`;
+    }
+    return `<tr class="an-row ${open?'open':''}" onclick="anToggleDetail('${esc(c.coin)}')" title="点击${open?'收起':'展开'}各钱包明细">
+      <td><span class="an-caret">${open?'▾':'▸'}</span> <b>${esc(c.coin)}</b>${cn?` <span style="color:var(--muted);font-weight:500;font-size:12px">${esc(cn)}</span>`:''}</td>
+      <td><span class="badge ${badge}">${esc(c.bias)}</span></td>
+      <td>${c.cur_price!=null?price(c.cur_price):'—'}</td>
+      <td>${c.long_wallets?`<span class="pos">${c.long_wallets} 个 · ${usd(c.long_notional)}</span>`:'—'}</td>
+      <td>${c.long_avg!=null?price(c.long_avg):'—'}</td>
+      <td>${c.short_wallets?`<span class="neg">${c.short_wallets} 个 · ${usd(c.short_notional)}</span>`:'—'}</td>
+      <td>${c.short_avg!=null?price(c.short_avg):'—'}</td>
+      <td><span class="badge ${c.net_notional>=0?'b-open-long':'b-open-short'}">${c.net_notional>=0?'净多':'净空'}</span> <span style="color:var(--text)">${usd(Math.abs(c.net_notional))}</span></td>
+      <td>${c.long_lev?`<span class="pos">${(+c.long_lev).toFixed(1)}x</span>`:'—'} / ${c.short_lev?`<span class="neg">${(+c.short_lev).toFixed(1)}x</span>`:'—'}</td>
+      <td class="${c.upnl>=0?'pos':'neg'}">${(c.upnl>=0?'+':'')+usd(c.upnl)}</td></tr>`+sub;
+  }).join("");
+  const tbody = rows || `<tr><td colspan="10" class="note">无符合筛选的记录</td></tr>`;
+  wrap.innerHTML=`<table><thead><tr>
+    <th>币种</th>
+    <th>方向共识</th>
+    <th>现价 ${ss('cur')}</th>
+    <th>多头(钱包·名义) ${ss('longN')}</th>
+    <th>多头均价 ${ss('longA')}</th>
+    <th>空头(钱包·名义) ${ss('shortN')}</th>
+    <th>空头均价 ${ss('shortA')}</th>
+    <th title="净敞口 = 多头名义 − 空头名义，只表示方向和规模，不是盈亏">净方向 ${ss('net')}</th>
+    <th title="多头/空头的名义加权平均杠杆">杠杆(多/空)</th>
+    <th title="这些钱包在该币未平仓持仓的浮动盈亏合计（多空一起算），绿=赚 红=亏">合计浮盈 ${ss('upnl')}</th>
+    </tr></thead><tbody>${tbody}</tbody></table>`;
+  const btn=document.getElementById("anCoinBtn"); if(btn) btn.textContent=`多选筛选${anCoins.size?` · ${anCoins.size}`:''} ▾`;
+  syncListHeight();
+}
+// 点击币种多选菜单以外区域时收起
+document.addEventListener("click",(e)=>{
+  if(!inAnalysis||!anMenuOpen) return;
+  const m=document.getElementById("anCoinMenu"), b=document.getElementById("anCoinBtn");
+  if(m&&!m.contains(e.target)&&b&&!b.contains(e.target)){ anMenuOpen=false; renderAnalysisPanel(); }
+});
+// 等级多选下拉：点击外部收起（清单工具栏 + 排行榜交易者列）
+document.addEventListener("click",(e)=>{
+  if(listTierOpen){
+    const wrap=document.getElementById("listTierWrap");
+    if(wrap&&!wrap.contains(e.target)){ listTierOpen=false; renderListTierUI(); }
+  }
+  if(lbTierOpen){
+    const btn=document.getElementById("lbTierBtn"), menu=document.getElementById("lbTierMenu");
+    if((!btn||!btn.contains(e.target))&&(!menu||!menu.contains(e.target))){ lbTierOpen=false; renderLeaderboard(); }
+  }
+});
+
+// ---- Hyperliquid 排行榜 ----
+function openLeaderboard(){
+  lbSign={day:"",week:"",month:""}; lbTiers=new Set(); lbTierOpen=false; lbSort="week"; lbDir="desc";  // 每次打开都回到默认（清空筛选与排序）
+  document.getElementById("lbModal").classList.add("show");
+  if(lbRows.length) renderLeaderboard();  // 先用默认状态即时渲染已有数据
+  loadLeaderboard();                       // 再按默认排序刷新（并清空勾选）
+}
+function closeLeaderboard(){ document.getElementById("lbModal").classList.remove("show"); }
+const LB_COLS=[["value","账户价值"],["day","日盈亏"],["week","周盈亏"],["month","月盈亏"],["allTime","总盈亏"]];
+const LB_COL_TIPS={value:"来自 HL 排行榜快照，可能被刷高或滞后；已跟踪的地址显示实测总资产（标「实时」）"};
+function lbSetSort(k){ if(lbSort===k){ lbDir = lbDir==="desc"?"asc":"desc"; } else { lbSort=k; lbDir="desc"; } loadLeaderboard(); }
+async function loadLeaderboard(){
+  const lim=document.getElementById("lbLimit").value;
+  const body=document.getElementById("lbBody");
+  if(!lbRows.length) body.innerHTML='<div class="spinner">加载排行榜…</div>';  // 已有旧数据就不清屏
+  lbSel.clear(); document.getElementById("lbAll").checked=false; updateLbCount();
+  try{ const d=await api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=${lim}`); lbRows=d.rows||[]; renderLeaderboard(); }
+  catch(e){
+    if(lbRows.length){ renderLeaderboard(); toast("刷新排行榜失败，仍显示上次数据"); }  // 有旧数据就保留
+    else body.innerHTML=`<div class="note">加载失败：${esc(e.message)}（需能访问 Hyperliquid）<br><button class="btn-ghost" style="margin-top:10px;height:34px" onclick="loadLeaderboard()">重试</button></div>`;
+  }
+}
+function lbPnlCell(w){ if(!w) return '<td>—</td>'; return `<td class="amt-cell ${w.pnl>=0?'pos':'neg'}">${(w.pnl>=0?'+':'')+usd(w.pnl)}<div style="font-weight:500;font-size:11px;color:var(--muted)">ROI ${(w.roi>=0?'+':'')+(w.roi*100).toFixed(1)}%</div></td>`; }
+const LB_SIGN_COLS = new Set(["day","week","month"]);  // 可按正负筛选的窗口
+// 等级筛选下拉（值=等级中文名，与 walletTier().t 对应）
+function lbSetSign(k,v){ lbSign[k]=v; renderLeaderboard(); }
+function lbToggleTierMenu(e){ if(e) e.stopPropagation(); lbTierOpen=!lbTierOpen; renderLeaderboard(); }
+function lbToggleTier(v,on){
+  if(v==='__clear__') lbTiers.clear();
+  else if(on) lbTiers.add(v); else lbTiers.delete(v);
+  renderLeaderboard();
+}
+function lbTraderTh(){
+  const menu=lbTierOpen?`<div class="th-menu" id="lbTierMenu" onclick="event.stopPropagation()">${tierMenuInner(lbTiers,'lbToggleTier')}</div>`:"";
+  return `<th>交易者 <span class="th-multi"><span class="th-btn" id="lbTierBtn" onclick="lbToggleTierMenu(event)">${tierBtnLabel(lbTiers)}</span>${menu}</span></th>`;
+}
+// 排行榜快照的账户价值可能被刷高/滞后；已跟踪的地址用清单实测的实时总值替代
+function lbEffVal(r){
+  const key=(r.address||'').toLowerCase();
+  const cc=cardCache["eth:"+key];
+  return (trackedAddrs.has(key) && cc && cc.usd!=null) ? cc.usd : r.account_value;
+}
+function lbIsLive(r){
+  const key=(r.address||'').toLowerCase();
+  const cc=cardCache["eth:"+key];
+  return trackedAddrs.has(key) && cc && cc.usd!=null;
+}
+function lbVisibleRows(){
+  return lbRows.filter(r=>{
+    if(lbTiers.size && !lbTiers.has(walletTier(lbEffVal(r)).t)) return false;
+    for(const k of ["day","week","month"]){
+      if(!lbSign[k]) continue;
+      const p = r[k] ? r[k].pnl : 0;
+      if(lbSign[k]==="pos" && !(p>0)) return false;
+      if(lbSign[k]==="neg" && !(p<0)) return false;
+    }
+    return true;
+  });
+}
+function renderLeaderboard(){
+  if(!lbRows.length){ document.getElementById("lbBody").innerHTML='<div class="note">暂无数据（需能访问 Hyperliquid）</div>'; return; }
+  const head=LB_COLS.map(([k,label])=>{
+    const arrow = lbSort===k ? (lbDir==="desc"?"↓":"↑") : "⇅";
+    let filter="";
+    if(LB_SIGN_COLS.has(k)){
+      filter=`<select class="th-filter" onclick="event.stopPropagation()" onchange="event.stopPropagation();lbSetSign('${k}',this.value)">
+        <option value="">全部</option><option value="pos" ${lbSign[k]==='pos'?'selected':''}>盈利</option><option value="neg" ${lbSign[k]==='neg'?'selected':''}>亏损</option></select>`;
+    }
+    return `<th class="lb-h ${lbSort===k?'on':''}" ${LB_COL_TIPS[k]?`title="${LB_COL_TIPS[k]}"`:''} onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span>${filter}</th>`;
+  }).join("");
+  const view=lbVisibleRows();
+  if(!view.length){ document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th>${lbTraderTh()}${head}</tr></thead><tbody><tr><td colspan="8" class="note">无符合筛选的记录（当前 ${lbRows.length} 条里按等级/盈亏筛选后为空）</td></tr></tbody></table>`; updateLbCount(); return; }
+  const rows=view.map((r,i)=>{
+    const tracked=trackedAddrs.has((r.address||'').toLowerCase());
+    const nm=customNames[(r.address||'').toLowerCase()]||r.display_name||shortAddr(r.address||'',8,6);
+    const effVal=lbEffVal(r), live=lbIsLive(r);
+    const valCell = live
+      ? `${usd(effVal)}<div style="font-weight:500;font-size:11px;color:var(--muted)" title="已跟踪，显示实测总资产；排行榜快照为 ${usd(r.account_value)}">实时</div>`
+      : usd(effVal);
+    return `<tr>
+      <td>${i+1}</td>
+      <td><input type="checkbox" ${tracked?'disabled':''} ${lbSel.has(r.address)?'checked':''} onchange="lbToggle('${r.address}',this.checked)"></td>
+      <td><b>${esc(nm)}</b> ${tierBadge(effVal)} <span class="edit-ic" title="重命名" onclick="lbRename('${r.address}')">${EDIT_SVG}</span><div class="mono" style="color:var(--muted);font-size:12px">${shortAddr(r.address||'',8,6)}${tracked?` · <span class="lb-untrack" onclick="lbUntrack('${r.address}')">取消跟踪</span>`:''}</div></td>
+      <td class="amt-cell">${valCell}</td>
+      ${lbPnlCell(r.day)}${lbPnlCell(r.week)}${lbPnlCell(r.month)}${lbPnlCell(r.allTime)}</tr>`;
+  }).join("");
+  document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th>${lbTraderTh()}${head}</tr></thead><tbody>${rows}</tbody></table>`;
+  updateLbCount();
+}
+function lbToggle(addr,on){ if(on) lbSel.add(addr); else lbSel.delete(addr); updateLbCount(); }
+function lbToggleAll(on){ lbSel.clear(); if(on) lbVisibleRows().forEach(r=>{ if(!trackedAddrs.has((r.address||'').toLowerCase())) lbSel.add(r.address); }); renderLeaderboard(); }
+async function lbUntrack(addr){
+  const key=(addr||'').toLowerCase();
+  const ws=walletList.filter(x=>(x.address||'').toLowerCase()===key);
+  if(!ws.length){ toast("未找到该跟踪记录"); return; }
+  try{ for(const w of ws) await api("/api/wallets/"+w.id,{method:"DELETE"}); toast("已取消跟踪"); await loadWallets(); renderLeaderboard(); }
+  catch(e){ toast(e.message); }
+}
+function updateLbCount(){ document.getElementById("lbCount").textContent = lbSel.size?`已选 ${lbSel.size} 个`:""; }
+async function importSelected(){
+  if(!lbSel.size) return toast("请先勾选地址");
+  const byAddr={}; lbRows.forEach(r=>byAddr[r.address]=r);
+  const items=[...lbSel].map(a=>({address:a, label:customNames[(a||'').toLowerCase()]||(byAddr[a]&&byAddr[a].display_name)||("HL "+shortAddr(a,4,4))}));
+  try{ const r=await api("/api/wallets/batch",{method:"POST",body:JSON.stringify({chain:"eth",items})});
+    toast(`已导入 ${r.added} 个${r.skipped?`，跳过 ${r.skipped} 个已存在`:""}${r.invalid?`，${r.invalid} 个无效`:""}`);
+    closeLeaderboard(); await loadWallets();
+  }catch(e){ toast(e.message); }
+}
+
+// 每 60s 轻量刷新未读红圈（只改徽章 DOM，不重建列表、不打余额接口）
+async function refreshBadges(){
+  if(document.hidden) return;
+  try{
+    const d=await api("/api/wallets"); walletList=d.wallets;
+    d.wallets.forEach(w=>{
+      const av=document.querySelector(`.wcard[data-key="${w.chain}:${w.address}"] .avatar`); if(!av) return;
+      let b=av.querySelector(".wbadge"); const n=w.unread||0;
+      const isOpen = sel && sel.chain===w.chain && sel.address===w.address && !inAnalysis;
+      if(n>0 && !isOpen){ if(!b){ b=document.createElement("span"); b.className="wbadge"; av.appendChild(b); } b.textContent=n>99?"99+":n; }
+      else if(b) b.remove();
+    });
+  }catch(e){}
+}
 (async function init(){
-  try { await loadChains(); await loadWallets(); }
-  catch(e){ document.getElementById("walletList").innerHTML = `<div class="note">加载失败：${esc(e.message)}</div>`; }
+  try{ await loadChains(); await loadWallets(); onAddrInput(); syncListHeight(); }
+  catch(e){ document.getElementById("walletList").innerHTML=`<div class="empty">加载失败：${esc(e.message)}</div>`; }
+  setInterval(refreshBadges, 60000);
+  // 后台预取排行榜(暖 5 分钟缓存)，点开时秒显
+  api(`/api/hl_leaderboard?sort=${lbSort}&dir=${lbDir}&limit=25`).then(d=>{ lbRows=d.rows||[]; }).catch(()=>{});
 })();
 </script>
 </body>

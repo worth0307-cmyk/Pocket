@@ -7,6 +7,7 @@ Docs: https://docs.etherscan.io/etherscan-v2
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Optional
 
@@ -173,13 +174,16 @@ class EVMClient(ChainClient):
     async def get_actions(self, address: str, limit: int = 20) -> list[Action]:
         address = self.normalize_address(address)
         offset = max(limit * 2, 30)
-        normal = await self._call(
-            "account", "txlist", address=address,
-            page=1, offset=offset, sort="desc",
-        )
-        tokens = await self._call(
-            "account", "tokentx", address=address,
-            page=1, offset=offset, sort="desc",
+        # 两个列表接口互不依赖，并行拉取，历史查询快约一倍。
+        normal, tokens = await asyncio.gather(
+            self._call(
+                "account", "txlist", address=address,
+                page=1, offset=offset, sort="desc",
+            ),
+            self._call(
+                "account", "tokentx", address=address,
+                page=1, offset=offset, sort="desc",
+            ),
         )
         normal = normal if isinstance(normal, list) else []
         tokens = tokens if isinstance(tokens, list) else []
@@ -258,17 +262,31 @@ class EVMClient(ChainClient):
                     return f"{fmt_amount(stable_out[0][1])} {stable_out[0][0]}"
             return ""
 
+        quote_kind: str | None = None
+        quote_amount = 0.0
+        token_contract: str | None = None
         if nonstable_in and spent_value:
             tok = nonstable_in[0]
             atype = ActionType.BUY
+            token_contract = tok[2]
             summary = f"买入 {fmt_amount(tok[1])} {tok[0]}（花费 {value_leg(False)}）"
+            if native_out > 0:
+                quote_kind, quote_amount = "native", native_out
+            elif stable_out:
+                quote_kind, quote_amount = "stable", stable_out[0][1]
         elif nonstable_out and recv_value:
             tok = nonstable_out[0]
             atype = ActionType.SELL
+            token_contract = tok[2]
             summary = f"卖出 {fmt_amount(tok[1])} {tok[0]}（换得 {value_leg(True)}）"
+            if native_in > 0:
+                quote_kind, quote_amount = "native", native_in
+            elif stable_in:
+                quote_kind, quote_amount = "stable", stable_in[0][1]
         elif nonstable_in and nonstable_out:
             ti, to = nonstable_in[0], nonstable_out[0]
             atype = ActionType.SWAP
+            token_contract = ti[2]
             summary = (
                 f"兑换 {fmt_amount(to[1])} {to[0]} → {fmt_amount(ti[1])} {ti[0]}"
             )
@@ -276,6 +294,7 @@ class EVMClient(ChainClient):
             atype = ActionType.TRANSFER_OUT
             if tokens_out:
                 t = tokens_out[0]
+                token_contract = t[2]
                 what = f"{fmt_amount(t[1])} {t[0]}"
             else:
                 what = f"{fmt_amount(native_out)} {self.native_symbol}"
@@ -287,6 +306,7 @@ class EVMClient(ChainClient):
             atype = ActionType.TRANSFER_IN
             if tokens_in:
                 t = tokens_in[0]
+                token_contract = t[2]
                 what = f"{fmt_amount(t[1])} {t[0]}"
             else:
                 what = f"{fmt_amount(native_in)} {self.native_symbol}"
@@ -308,4 +328,7 @@ class EVMClient(ChainClient):
             action_type=atype,
             summary=summary,
             explorer_url=self.explorer_tx(tx_hash),
+            quote_kind=quote_kind,
+            quote_amount=quote_amount,
+            token_contract=token_contract,
         )

@@ -40,9 +40,14 @@ def build_application(config: Config, db: WalletDB) -> Application:
         if http is not None:
             await http.aclose()
 
+    builder = Application.builder().token(config.tg_token)
+    if config.tg_proxy:
+        # Route both the Bot API calls and long-polling through the proxy
+        # (Telegram is blocked in some regions).
+        builder = builder.proxy(config.tg_proxy).get_updates_proxy(config.tg_proxy)
+        log.info("Telegram 通过代理连接：%s", config.tg_proxy)
     app = (
-        Application.builder()
-        .token(config.tg_token)
+        builder
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
@@ -65,7 +70,7 @@ def build_application(config: Config, db: WalletDB) -> Application:
     return app
 
 
-def start_web_thread(config: Config, db: WalletDB) -> None:
+def start_web_thread(config: Config, db: WalletDB) -> threading.Thread:
     """Launch the FastAPI dashboard in a daemon thread (own event loop)."""
     import uvicorn
 
@@ -89,18 +94,43 @@ def start_web_thread(config: Config, db: WalletDB) -> None:
     thread = threading.Thread(target=run, name="web", daemon=True)
     thread.start()
     log.info("dashboard at http://%s:%d", config.web_host, config.web_port)
+    return thread
+
+
+def _wait(web_thread) -> None:
+    """Block the main thread so the daemon web server keeps serving."""
+    if web_thread is None:
+        return
+    try:
+        while web_thread.is_alive():
+            web_thread.join(timeout=1)
+    except KeyboardInterrupt:
+        pass
 
 
 def main() -> None:
     config = load_config()
     db = WalletDB(config.db_path)
 
-    if config.web_enabled:
-        start_web_thread(config, db)
+    web_thread = start_web_thread(config, db) if config.web_enabled else None
+
+    if not config.bot_enabled:
+        log.info("Telegram 机器人已禁用 (BOT_ENABLED=false)，仅运行网页面板。")
+        return _wait(web_thread)
 
     app = build_application(config, db)
     log.info("starting Telegram bot…")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
+    try:
+        app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
+    except Exception as exc:  # noqa: BLE001 - keep the dashboard alive on TG failure
+        log.error("Telegram 机器人连接失败：%s", exc)
+        log.error(
+            "常见原因：无法访问 api.telegram.org（国内需代理/VPN），或代理端口不对。"
+        )
+        log.error(
+            "网页面板不受影响，继续运行中。若只用网页，可在 .env 设 BOT_ENABLED=false 跳过机器人。"
+        )
+        _wait(web_thread)
 
 
 if __name__ == "__main__":

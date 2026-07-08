@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS wallets (
     chat_id   TEXT,
     cursor    TEXT,
     added_at  INTEGER,
+    unread    INTEGER DEFAULT 0,
+    sort_ts   INTEGER,
+    pinned    INTEGER DEFAULT 0,
     UNIQUE(chain, address)
 );
 """
@@ -35,6 +38,8 @@ class Wallet:
     chat_id: str
     cursor: Optional[str]
     added_at: int
+    unread: int = 0  # 未读提醒数（TG 推送后 +1，前端查看后清零）
+    pinned: int = 0  # 置顶标记：置顶组永远压在最上层，新增地址不会挤下去
 
 
 class WalletDB:
@@ -46,6 +51,16 @@ class WalletDB:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # 旧库迁移：补列（已存在则忽略）
+            for ddl in (
+                "ALTER TABLE wallets ADD COLUMN unread INTEGER DEFAULT 0",
+                "ALTER TABLE wallets ADD COLUMN sort_ts INTEGER",
+                "ALTER TABLE wallets ADD COLUMN pinned INTEGER DEFAULT 0",
+            ):
+                try:
+                    self._conn.execute(ddl)
+                except sqlite3.OperationalError:
+                    pass
             self._conn.commit()
 
     def close(self) -> None:
@@ -62,12 +77,18 @@ class WalletDB:
             chat_id=row["chat_id"] or "",
             cursor=row["cursor"],
             added_at=row["added_at"] or 0,
+            unread=row["unread"] or 0,
+            pinned=row["pinned"] or 0,
         )
 
     def add_wallet(
-        self, chain: str, address: str, label: str, chat_id: str
+        self, chain: str, address: str, label: str, chat_id: str,
+        sort_ts: Optional[int] = None,
     ) -> tuple[bool, Optional[Wallet]]:
-        """Insert a wallet. Returns (created, wallet). created=False if it existed."""
+        """Insert a wallet. Returns (created, wallet). created=False if it existed.
+
+        ``sort_ts`` is the manual-order key (bigger = closer to the top);
+        defaults to now so newly added wallets appear first."""
         with self._lock:
             cur = self._conn.execute(
                 "SELECT * FROM wallets WHERE chain=? AND address=?",
@@ -76,10 +97,12 @@ class WalletDB:
             existing = cur.fetchone()
             if existing:
                 return False, self._row(existing)
+            now = int(time.time())
             self._conn.execute(
-                "INSERT INTO wallets (chain, address, label, chat_id, cursor, added_at)"
-                " VALUES (?,?,?,?,?,?)",
-                (chain, address, label, chat_id, None, int(time.time())),
+                "INSERT INTO wallets (chain, address, label, chat_id, cursor,"
+                " added_at, sort_ts) VALUES (?,?,?,?,?,?,?)",
+                (chain, address, label, chat_id, None, now,
+                 int(sort_ts) if sort_ts is not None else now),
             )
             self._conn.commit()
             row = self._conn.execute(
@@ -113,6 +136,14 @@ class WalletDB:
             self._conn.commit()
             return self._row(row)
 
+    def clear(self) -> int:
+        """Delete all wallets; returns how many were removed."""
+        with self._lock:
+            n = self._conn.execute("SELECT COUNT(*) FROM wallets").fetchone()[0]
+            self._conn.execute("DELETE FROM wallets")
+            self._conn.commit()
+            return int(n)
+
     def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
         with self._lock:
             row = self._conn.execute(
@@ -122,14 +153,120 @@ class WalletDB:
 
     def list_wallets(self) -> list[Wallet]:
         with self._lock:
+            # 置顶组永远在最上（新增/导入都是 pinned=0，挤不掉它们）；
+            # 组内按手动排序键，老数据退回添加时间。
             rows = self._conn.execute(
-                "SELECT * FROM wallets ORDER BY chain, id"
+                "SELECT * FROM wallets"
+                " ORDER BY COALESCE(pinned,0) DESC,"
+                " COALESCE(sort_ts, added_at, 0) DESC, id DESC"
             ).fetchall()
             return [self._row(r) for r in rows]
+
+    def set_sort_ts(self, wallet_id: int, sort_ts: int) -> None:
+        """置顶/换位用：直接设排序键（越大越靠前）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallets SET sort_ts=? WHERE id=?",
+                (int(sort_ts), wallet_id),
+            )
+            self._conn.commit()
+
+    def _top_key(self) -> int:
+        row = self._conn.execute(
+            "SELECT MAX(COALESCE(sort_ts, added_at, 0)) AS m FROM wallets"
+        ).fetchone()
+        return int(row["m"] or 0) + 1
+
+    def move_wallet(self, wallet_id: int, action: str) -> bool:
+        """top=钉住(永远压在最上层)；untop=取消钉住；up/down=组内与相邻项换位。
+        返回是否有变化。"""
+        wallets = self.list_wallets()  # 已按当前显示顺序
+        idx = next((i for i, w in enumerate(wallets) if w.id == wallet_id), None)
+        if idx is None:
+            return False
+        me = wallets[idx]
+        if action == "top":
+            if me.pinned and idx == 0:
+                return False
+            with self._lock:
+                self._conn.execute(
+                    "UPDATE wallets SET pinned=1, sort_ts=? WHERE id=?",
+                    (self._top_key(), wallet_id),
+                )
+                self._conn.commit()
+            return True
+        if action == "untop":
+            if not me.pinned:
+                return False
+            with self._lock:  # 取消后落在未置顶组的最上面
+                self._conn.execute(
+                    "UPDATE wallets SET pinned=0, sort_ts=? WHERE id=?",
+                    (self._top_key(), wallet_id),
+                )
+                self._conn.commit()
+            return True
+        other = idx - 1 if action == "up" else idx + 1
+        if other < 0 or other >= len(wallets):
+            return False  # 已在最顶/最底
+        if wallets[other].pinned != me.pinned:
+            return False  # 不跨置顶分组换位（先取消置顶）
+
+        def key(w: Wallet) -> int:
+            row = self._conn.execute(
+                "SELECT COALESCE(sort_ts, added_at, 0) AS k FROM wallets WHERE id=?",
+                (w.id,),
+            ).fetchone()
+            return int(row["k"]) if row else 0
+
+        with self._lock:
+            ka, kb = key(wallets[idx]), key(wallets[other])
+            if ka == kb:  # 键相同（同秒导入），错开一位保证交换生效
+                kb += 1 if action == "up" else -1
+            self._conn.execute(
+                "UPDATE wallets SET sort_ts=? WHERE id=?", (kb, wallets[idx].id)
+            )
+            self._conn.execute(
+                "UPDATE wallets SET sort_ts=? WHERE id=?", (ka, wallets[other].id)
+            )
+            self._conn.commit()
+        return True
+
+    def set_label(self, wallet_id: int, label: str) -> Optional[Wallet]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM wallets WHERE id=?", (wallet_id,)
+            ).fetchone()
+            if not row:
+                return None
+            self._conn.execute(
+                "UPDATE wallets SET label=? WHERE id=?", (label, wallet_id)
+            )
+            self._conn.commit()
+            return self._row(
+                self._conn.execute(
+                    "SELECT * FROM wallets WHERE id=?", (wallet_id,)
+                ).fetchone()
+            )
 
     def set_cursor(self, wallet_id: int, cursor: str) -> None:
         with self._lock:
             self._conn.execute(
                 "UPDATE wallets SET cursor=? WHERE id=?", (cursor, wallet_id)
+            )
+            self._conn.commit()
+
+    def bump_unread(self, wallet_id: int, n: int = 1) -> None:
+        """TG 推送后累加该钱包的未读提醒数（前端红圈用）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallets SET unread=COALESCE(unread,0)+? WHERE id=?",
+                (n, wallet_id),
+            )
+            self._conn.commit()
+
+    def clear_unread(self, wallet_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallets SET unread=0 WHERE id=?", (wallet_id,)
             )
             self._conn.commit()

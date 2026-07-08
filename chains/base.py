@@ -49,6 +49,11 @@ class Action:
     action_type: ActionType
     summary: str  # human readable one-liner (no emoji/prefix)
     explorer_url: str
+    # Optional structured "money leg" of a BUY/SELL, used for PnL estimation.
+    # For BUY it is what was spent; for SELL it is what was received.
+    quote_kind: Optional[str] = None   # "native" | "stable" | None
+    quote_amount: float = 0.0          # native coin units, or USD for stable
+    token_contract: Optional[str] = None  # primary token contract (for spam filtering)
 
 
 @dataclass

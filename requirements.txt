@@ -1,6 +1,9 @@
-python-telegram-bot[job-queue]==21.6
-httpx==0.27.2
-python-dotenv==1.0.1
-fastapi==0.115.5
-uvicorn==0.32.1
-pydantic==2.9.2
+# 用下限约束而非精确锁定，方便在较新的 Python（含 3.13/3.14）上拿到带 wheel 的版本。
+# 若某天新大版本破坏兼容，可改回精确版本号。
+python-telegram-bot[job-queue]>=21.6,<23
+# [socks] 让 TELEGRAM_PROXY 支持 socks5:// 代理
+httpx[socks]>=0.27,<1
+python-dotenv>=1.0
+fastapi>=0.115
+uvicorn>=0.30
+pydantic>=2.9

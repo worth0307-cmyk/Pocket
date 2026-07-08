@@ -16,7 +16,9 @@
 | 余额信息 | 原生币余额；Solana 含 SPL 代币持仓；BTC 含历史交易数 |
 | 地址清单 | 增删查，按链分组，支持备注 |
 | 自动跟踪 + TG 提醒 | 定时轮询每个地址，发现新交易即推送到 Telegram |
-| 网页面板 | 深色 UI：清单 / 余额卡片 / 动作流，支持快速查询任意地址 |
+| 网页面板 | DeBank 风浅色 UI：清单 / 持仓 / 动作流，**动作流自动刷新（30s）**，支持快速查询 |
+| USD 估值 | 原生币 + 稳定币按 CoinGecko 免费价折算总值（无需 key） |
+| 盈亏估算 | 从近期可见交易估算已实现盈亏（买入成本 vs 卖出回款），仅供参考 |
 
 两个入口共用同一套后端与数据库：
 - **Telegram 机器人**：用命令管理清单、查余额、查动作，并接收自动提醒。
@@ -56,6 +58,17 @@ python main.py
 ```
 
 打开 <http://127.0.0.1:8000> 查看网页面板；在 Telegram 里给机器人发 `/start`。
+
+### 自动推送提醒（Telegram）
+
+跟踪清单里的钱包一有新成交，会自动推送到 Telegram：买入/卖出、开多/开空/平多/平空、
+平仓已实现盈亏，大额（≥ `ALERT_LARGE_USD`）标 🔥，并带上钱包等级（巨鲸/超大户/…）。
+
+- 每 `POLL_INTERVAL` 秒轮询一次（默认 60s），只推「新」成交，不重复。
+- `ALERT_MIN_USD`（默认 $10K）以下的小额不推，避免刷屏。
+- **国内必看**：`api.telegram.org` 被墙，需在 `.env` 设 `TELEGRAM_PROXY`
+  （如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`）+ `BOT_ENABLED=true`。
+  只用网页不推送时保持 `BOT_ENABLED=false` 即可。
 
 ### 免费 API Key 在哪拿（各 1 分钟）
 
@@ -123,11 +136,13 @@ static/index.html  深色网页面板（单文件）
 config.py          环境配置
 db.py              SQLite 清单 + 跟踪游标
 formatting.py      Telegram 消息排版
+analytics.py       USD 估值 + 盈亏估算
 chains/            链适配层
   base.py          统一数据模型 / 接口
   evm.py           Etherscan V2（多 EVM 链）
   solana.py        Helius + Solana RPC
   bitcoin.py       mempool.space
+  prices.py        CoinGecko 免费价（USD 估值/盈亏）
   __init__.py      链注册 / 工厂
   util.py          base58 / 金额格式化
 ```

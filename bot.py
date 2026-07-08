@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+import analytics
 import chains
 from chains.base import ActionsUnsupported, ChainError
 from formatting import (
@@ -225,6 +226,7 @@ async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         bal = await client.get_balance(address)
     except ChainError as exc:
         return await msg.edit_text(f"查询失败：{exc}")
+    await analytics.enrich_balance_usd(bal, http)
     await msg.edit_text(
         format_balance(bal, label),
         parse_mode=ParseMode.HTML,

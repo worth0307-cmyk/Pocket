@@ -1,0 +1,19 @@
+# systemd 服务模板：/etc/systemd/system/pocket.service
+# 按你的实际用户名与安装路径改 User / WorkingDirectory / ExecStart。
+[Unit]
+Description=Pocket wallet tracker (Telegram bot + web dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 建议用非 root 普通用户运行
+User=pocket
+WorkingDirectory=/opt/pocket
+ExecStart=/opt/pocket/.venv/bin/python main.py
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -16,13 +16,18 @@ except ImportError:  # python-dotenv optional; env vars still work
 @dataclass
 class Config:
     tg_token: str
+    tg_proxy: str                # proxy URL for Telegram (needed where TG is blocked)
     alert_chat_id: str           # default chat to send auto-tracking alerts to
     allowed_chat_ids: set[str]   # chats allowed to control the bot (empty = any)
     etherscan_api_key: str
     helius_api_key: str
+    moralis_api_key: str
     poll_interval: int           # seconds between auto-tracking polls
+    alert_min_usd: float         # skip trade alerts below this USD value (anti-spam)
+    alert_large_usd: float       # mark trades at/above this USD value as 大额 🔥
     db_path: str
     max_alerts_per_poll: int     # cap alerts per wallet per poll to avoid floods
+    bot_enabled: bool            # run the Telegram bot (set false for web-only)
     web_enabled: bool            # serve the FastAPI dashboard alongside the bot
     web_host: str
     web_port: int
@@ -49,26 +54,38 @@ def load_config() -> Config:
         poll = 60
     poll = max(poll, 20)  # be polite to free APIs
 
+    def _float(name: str, default: float) -> float:
+        try:
+            return float(_clean(os.getenv(name)) or default)
+        except ValueError:
+            return default
+
+    alert_min = _float("ALERT_MIN_USD", 10000)
+    alert_large = _float("ALERT_LARGE_USD", 50000)
+    tg_proxy = _clean(os.getenv("TELEGRAM_PROXY")) or _clean(os.getenv("BOT_PROXY"))
+
     try:
         web_port = int(_clean(os.getenv("WEB_PORT")) or "8000")
     except ValueError:
         web_port = 8000
-    web_enabled = (_clean(os.getenv("WEB_ENABLED")) or "true").lower() not in (
-        "0",
-        "false",
-        "no",
-        "off",
-    )
+    _falsey = ("0", "false", "no", "off")
+    web_enabled = (_clean(os.getenv("WEB_ENABLED")) or "true").lower() not in _falsey
+    bot_enabled = (_clean(os.getenv("BOT_ENABLED")) or "true").lower() not in _falsey
 
     return Config(
         tg_token=token,
+        tg_proxy=tg_proxy,
         alert_chat_id=chat,
         allowed_chat_ids=allowed,
         etherscan_api_key=_clean(os.getenv("ETHERSCAN_API_KEY")),
         helius_api_key=_clean(os.getenv("HELIUS_API_KEY")),
+        moralis_api_key=_clean(os.getenv("MORALIS_API_KEY")),
         poll_interval=poll,
+        alert_min_usd=alert_min,
+        alert_large_usd=alert_large,
         db_path=_clean(os.getenv("DB_PATH")) or "wallets.db",
         max_alerts_per_poll=10,
+        bot_enabled=bot_enabled,
         web_enabled=web_enabled,
         web_host=_clean(os.getenv("WEB_HOST")) or "127.0.0.1",
         web_port=web_port,

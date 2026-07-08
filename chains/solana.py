@@ -161,8 +161,10 @@ class SolanaClient(ChainClient):
 
         gained = [(m, a) for m, a in deltas.items() if a > 1e-12 and m not in STABLE_MINTS]
         lost = [(m, a) for m, a in deltas.items() if a < -1e-12 and m not in STABLE_MINTS]
-        stable_gain = any(a > 1e-12 for m, a in deltas.items() if m in STABLE_MINTS)
-        stable_loss = any(a < -1e-12 for m, a in deltas.items() if m in STABLE_MINTS)
+        stable_gain_amt = sum(a for m, a in deltas.items() if m in STABLE_MINTS and a > 0)
+        stable_loss_amt = -sum(a for m, a in deltas.items() if m in STABLE_MINTS and a < 0)
+        stable_gain = stable_gain_amt > 1e-12
+        stable_loss = stable_loss_amt > 1e-12
         spent_value = sol_delta < -1e-9 or stable_loss
         recv_value = sol_delta > 1e-9 or stable_gain
 
@@ -172,14 +174,24 @@ class SolanaClient(ChainClient):
         # Prefer Helius's own readable description when available.
         desc = (it.get("description") or "").strip()
 
+        quote_kind: str | None = None
+        quote_amount = 0.0
         if gained and spent_value:
             atype = ActionType.BUY
             m, a = gained[0]
             summary = desc or f"买入 {fmt_amount(a)} {sym(m)}"
+            if sol_delta < -1e-9:
+                quote_kind, quote_amount = "native", abs(sol_delta)
+            elif stable_loss:
+                quote_kind, quote_amount = "stable", stable_loss_amt
         elif lost and recv_value:
             atype = ActionType.SELL
             m, a = lost[0]
             summary = desc or f"卖出 {fmt_amount(abs(a))} {sym(m)}"
+            if sol_delta > 1e-9:
+                quote_kind, quote_amount = "native", sol_delta
+            elif stable_gain:
+                quote_kind, quote_amount = "stable", stable_gain_amt
         elif gained and lost:
             atype = ActionType.SWAP
             mi, ai = gained[0]
@@ -215,4 +227,6 @@ class SolanaClient(ChainClient):
             action_type=atype,
             summary=summary,
             explorer_url=self.explorer_tx(sig),
+            quote_kind=quote_kind,
+            quote_amount=quote_amount,
         )
