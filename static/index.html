@@ -354,12 +354,18 @@ const STOCK_SYMS = new Set([
   "ASML","NIO","XPEV","LI","RIVN","LCID","SOFI","DKNG","RBLX","U","NET","DDOG","SNOW","CRWD","PANW","ZS","MRNA","PFE",
   "JNJ","XOM","CVX","T","VZ","F","GM","BRK","BRKB","LLY","UNH","HD","ABBV","MRK","ADP","NOW","INTU","AMAT","LRCX",
   "MARA","RIOT","CLSK","HUT","SBET","CRCL","DFDV","GLXY","BMNR","SNDK","WDC","STX","ROKU","WBD","SPCE","RKLB","JOBY",
-  "SPCX","CRCL2","HIMS","APP","DELL","ORCL","IBM","CSCO","MRVL","ON","WOLF","ENPH","FSLR","PLUG","CHPT","AI","BBAI"]);
+  "SPCX","CRCL2","HIMS","APP","DELL","ORCL","IBM","CSCO","MRVL","ON","WOLF","ENPH","FSLR","PLUG","CHPT","AI","BBAI",
+  // trade.xyz 等 pre-IPO / 个股永续（HIP-3 子交易所）
+  "ZHIPU","SKHX","CBRS","OPENAI","ANTHROPIC","XAI","CURSOR","STRIPE","DATABRICKS","DBX","RAMP"]);
 // 可能出现在 builder 子交易所(带冒号)的加密币种，仍归加密
 const CRYPTO_SYMS = new Set(["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","LTC","BCH","DOT","MATIC","TRX","TON","SUI","APT","ARB","OP","HYPE","PEPE","SHIB","BONK","WIF","WLD","JUP","JTO","PYTH","TIA","SEI","INJ","AAVE","UNI","XMR","LIT","ENA","ONDO","FARTCOIN","KPEPE","KBONK","KSHIB"]);  // coinBase() 已转大写，清单须全大写
 const CAT_CN = {crypto:"加密", stock:"股票", futures:"期货", other:"其它"};
 const CATS = ["crypto","stock","futures","other"];
 const INDEX_RE = /^[A-Z]{1,4}\d{2,4}$/;  // 指数名启发式：US500 / NAS100 / GER40 / JP225 / XYZ100
+// 只上架个股/pre-IPO 的 builder 子交易所：未知代号默认按「股票」而非「其它」，
+// 免得 trade.xyz 每上一家 pre-IPO 公司(智谱/SK海力士/Cerebras…)就要手动补一遍。
+const STOCK_DEXES = new Set(["xyz"]);        // trade.xyz（xyz:SYM）
+function coinDex(c){ const s=String(c||""); const i=s.indexOf(":"); return i>=0 ? s.slice(0,i).toLowerCase() : ""; }
 function coinBase(c){ const s=String(c||""); const i=s.lastIndexOf(":"); return (i>=0?s.slice(i+1):s).toUpperCase(); }
 function coinCat(c){
   const s=String(c||""), b=coinBase(c);
@@ -368,6 +374,7 @@ function coinCat(c){
   if(STOCK_SYMS.has(b)) return "stock";        // 个股/指数
   if(CRYPTO_SYMS.has(b)) return "crypto";      // builder 上的加密
   if(INDEX_RE.test(b)) return "stock";         // 形如 XYZ100/US500 的指数名，归股票
+  if(STOCK_DEXES.has(coinDex(c))) return "stock";  // 个股/pre-IPO 子交易所的未知代号，归股票
   return "other";                              // 其余暂归其它
 }
 // 币种中文名（按代号，取到才显示，取不到就不显示）。
@@ -386,6 +393,9 @@ const CN_NAMES = {
   JNJ:"强生", XOM:"埃克森美孚", CVX:"雪佛龙", F:"福特", GM:"通用汽车", UBER:"优步", SHOP:"Shopify",
   PYPL:"PayPal", GME:"游戏驿站", AMC:"AMC院线", MRNA:"Moderna", LLY:"礼来", UNH:"联合健康", HD:"家得宝",
   IBM:"IBM", CSCO:"思科", MARA:"Marathon", RIOT:"Riot", ARM:"Arm", SMCI:"超微电脑", DELL:"戴尔", CRCL:"Circle",
+  // pre-IPO / 个股永续（trade.xyz 等）
+  ZHIPU:"智谱AI", SKHX:"SK海力士", CBRS:"Cerebras", SPCX:"SpaceX", OPENAI:"OpenAI", ANTHROPIC:"Anthropic",
+  XAI:"xAI", CURSOR:"Cursor", STRIPE:"Stripe", DATABRICKS:"Databricks",
   // 指数
   SP500:"标普500", SPX:"标普500", SPX500:"标普500", US500:"标普500", ES:"标普500", SPY:"标普500ETF",
   NDX:"纳斯达克100", NAS100:"纳斯达克100", US100:"纳斯达克100", USTECH:"纳斯达克100", QQQ:"纳指100ETF",
