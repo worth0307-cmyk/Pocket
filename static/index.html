@@ -432,6 +432,21 @@ const EDIT_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stro
 let customNames = {};
 try{ customNames = JSON.parse(localStorage.getItem("wt_names")||"{}") || {}; }catch(e){ customNames = {}; }
 function saveNames(){ try{ localStorage.setItem("wt_names", JSON.stringify(customNames)); }catch(e){} }
+// 面板名称以本地 customNames 优先显示，但 TG 推送只认数据库 label。
+// 历史上（或跨路径）改的名字可能只落在本地，导致 TG 仍显示短地址——
+// 这里把有分歧的名字回写数据库，让两边一致。改名后已即时同步，故正常时无操作。
+function reconcileLabels(wallets){
+  const fixes = (wallets||[]).filter(w=>{
+    const k=(w.address||'').toLowerCase();
+    return customNames[k] && customNames[k] !== (w.label||"");
+  });
+  if(!fixes.length) return;
+  Promise.all(fixes.map(w=>{
+    const label=customNames[(w.address||'').toLowerCase()];
+    return api("/api/wallets/"+w.id,{method:"PATCH",body:JSON.stringify({label})})
+      .then(()=>{ w.label=label; }).catch(()=>{});  // 就地更新，避免下次重复回写
+  }));
+}
 async function renameWallet(id){
   const w = walletList.find(x=>x.id===id); if(!w){ toast("未找到该钱包"); return; }
   const name = prompt("为该地址设置名称（留空清除）：", w.label||"");
@@ -552,6 +567,7 @@ async function loadWallets(){
   walletList=d.wallets;
   trackedAddrs=new Set(d.wallets.map(w=>(w.address||'').toLowerCase()));
   analysisSet=new Set([...analysisSet].filter(a=>trackedAddrs.has((a||'').toLowerCase())));
+  reconcileLabels(d.wallets);  // 把只存在本地的自定义名字回写数据库 label，让 TG 推送也用上
   document.getElementById("wcount").textContent = d.wallets.length?"("+d.wallets.length+")":"";
   // 工具条始终显示（至少保留「导入」），仅隐藏需要钱包才有意义的按钮，避免清空后按钮全消失
   document.querySelectorAll(".need-wallets").forEach(b=>{ b.style.display = d.wallets.length?"":"none"; });
