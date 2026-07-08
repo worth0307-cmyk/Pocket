@@ -178,6 +178,7 @@
   .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); font-weight: 800; }
   .modal-head .ctrls { display: flex; align-items: center; gap: 8px; font-weight: 400; }
   .modal-body { overflow: auto; }
+  #lbBody { min-height: min(420px, 62vh); }  /* 空态/加载/筛选无结果时保持稳定高度，弹层不塌缩变窄 */
   .modal-body table { width: 100%; }
   .modal-body th { position: sticky; top: 0; background: #fff; z-index: 1; }
   .modal-foot { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-top: 1px solid var(--border); }
@@ -1370,7 +1371,7 @@ function renderLeaderboard(){
     return `<th class="lb-h ${lbSort===k?'on':''}" ${LB_COL_TIPS[k]?`title="${LB_COL_TIPS[k]}"`:''} onclick="lbSetSort('${k}')">${label} <span class="th-sort ${lbSort===k?'on':''}">${arrow}</span>${filter}</th>`;
   }).join("");
   const view=lbVisibleRows();
-  if(!view.length){ document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th>${lbTraderTh()}${head}</tr></thead><tbody><tr><td colspan="8" class="note">无符合筛选的记录（当前 ${lbRows.length} 条里按等级/盈亏筛选后为空）</td></tr></tbody></table>`; updateLbCount(); return; }
+  if(!view.length){ document.getElementById("lbBody").innerHTML=`<table><thead><tr><th>#</th><th></th>${lbTraderTh()}${head}</tr></thead><tbody><tr><td colspan="8" class="note" style="height:320px;text-align:center;vertical-align:middle">无符合筛选的记录（当前 ${lbRows.length} 条里按等级/盈亏筛选后为空）<div style="margin-top:6px;font-size:12px;color:var(--muted-2)">可在上方列头调整或清空筛选</div></td></tr></tbody></table>`; updateLbCount(); return; }
   const rows=view.map((r,i)=>{
     const tracked=trackedAddrs.has((r.address||'').toLowerCase());
     const nm=customNames[(r.address||'').toLowerCase()]||r.display_name||shortAddr(r.address||'',8,6);
