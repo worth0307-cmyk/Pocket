@@ -4,6 +4,12 @@
 因为不再依赖 Telegram，轮询改由网页服务（web.py 的 lifespan）驱动，
 这样即使不开机器人（BOT_ENABLED=false）红圈也照常工作。
 
+**只查 Hyperliquid**（免费公开接口、无 key、不限额）。这里曾经还顺带拉 Moralis 的
+链上 swaps，但那是按「钱包 × 6 条链」全量轮询的：6 个钱包每分钟就是 36 次请求、
+每天 5 万次，免费档 40K CU/月 不到一天就烧光（实测把额度打到 103%）。
+Moralis 改为只在用户点开钱包看详情时按需调用，那边有缓存、量很小。
+代价：红圈不统计纯链上 DEX 兑换，只统计 HL 成交。
+
 每轮只统计比游标更新的成交，首轮仅记录游标不计数，避免把历史记录一次性算成未读。
 """
 
@@ -16,7 +22,6 @@ import logging
 import chains
 from chains.base import ActionsUnsupported, ChainError
 from chains.hyperliquid import hyperliquid_state
-from chains.portfolio import DEFAULT_EVM_CHAINS, evm_swaps
 
 log = logging.getLogger("tracker")
 
@@ -32,27 +37,15 @@ def _load_state(cursor: str | None) -> dict:
         return {}
 
 
-async def _wallet_events(wallet, config, http) -> list[dict]:
-    """Merged HL fills + EVM swaps for one wallet, newest-first."""
+async def _wallet_events(wallet, http) -> list[dict]:
+    """This wallet's recent Hyperliquid fills, newest-first (keyless, unmetered)."""
     addr = wallet.address
-    events: list[dict] = []
-
-    try:  # Hyperliquid is keyless
+    try:
         hl = await hyperliquid_state(http, addr, with_fills=True)
-        events.extend(hl.get("fills", []) or [])
-    except Exception as exc:  # noqa: BLE001 - one source failing shouldn't kill the scan
+    except Exception as exc:  # noqa: BLE001 - a bad round shouldn't kill the scan
         log.debug("HL scan %s failed: %s", addr, exc)
-
-    if config.moralis_api_key:
-        try:
-            sw = await evm_swaps(
-                http, config.moralis_api_key, addr.lower(),
-                list(DEFAULT_EVM_CHAINS), limit=20,
-            )
-            events.extend(sw.get("swaps", []) or [])
-        except Exception as exc:  # noqa: BLE001
-            log.debug("EVM swaps scan %s failed: %s", addr, exc)
-
+        return []
+    events = list(hl.get("fills", []) or [])
     events.sort(key=lambda e: e.get("timestamp") or 0, reverse=True)
     return events
 
@@ -87,7 +80,7 @@ async def _scan_legacy(wallet, config, http, db) -> None:
 async def _scan_wallet(wallet, config, http, db) -> None:
     if wallet.chain not in EVM_CHAINS:
         return await _scan_legacy(wallet, config, http, db)
-    events = await _wallet_events(wallet, config, http)
+    events = await _wallet_events(wallet, http)
     if not events:
         return
 

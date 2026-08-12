@@ -69,6 +69,9 @@ python main.py
 
 - 每 `POLL_INTERVAL` 秒扫描一次（默认 60s），只算「新」成交，不重复计数。
 - `ALERT_MIN_USD`（默认 $10K）以下的小额不计入，避免刷屏。
+- 扫描**只查 Hyperliquid**（免费公开接口、不限额），因此红圈统计的是 HL 成交；
+  纯链上 DEX 兑换不计入红圈——它需要 Moralis，而按「钱包 × 6 链」轮询会在一天内
+  烧光免费档 40K CU/月 的额度。Moralis 改为只在点开钱包看详情时按需调用。
 - 扫描跑在网页服务里，**与 Telegram 无关**：设 `BOT_ENABLED=false` 红圈照常工作。
 - **国内看这里**：只用网页面板的话不需要任何代理；仅当要用机器人查询命令时，
   才需设 `TELEGRAM_PROXY` + `BOT_ENABLED=true`（`api.telegram.org` 被墙）。
