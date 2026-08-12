@@ -17,17 +17,15 @@ except ImportError:  # python-dotenv optional; env vars still work
 class Config:
     tg_token: str
     tg_proxy: str                # proxy URL for Telegram (needed where TG is blocked)
-    alert_chat_id: str           # default chat to send auto-tracking alerts to
+    alert_chat_id: str           # default chat stored on wallets added from the panel
     allowed_chat_ids: set[str]   # chats allowed to control the bot (empty = any)
     etherscan_api_key: str
     helius_api_key: str
     moralis_api_key: str
-    poll_interval: int           # seconds between auto-tracking polls
-    alert_min_usd: float         # skip trade alerts below this USD value (anti-spam)
-    alert_large_usd: float       # mark trades at/above this USD value as 大额 🔥
+    poll_interval: int           # seconds between new-trade scans
+    alert_min_usd: float         # ignore trades below this USD value (anti-spam)
     db_path: str
-    max_alerts_per_poll: int     # cap alerts per wallet per poll to avoid floods
-    bot_enabled: bool            # run the Telegram bot (set false for web-only)
+    bot_enabled: bool            # run the Telegram bot commands (set false for web-only)
     web_enabled: bool            # serve the FastAPI dashboard alongside the bot
     web_host: str
     web_port: int
@@ -39,10 +37,15 @@ def _clean(value: str) -> str:
 
 
 def load_config() -> Config:
+    _falsey = ("0", "false", "no", "off")
+    bot_enabled = (_clean(os.getenv("BOT_ENABLED")) or "true").lower() not in _falsey
+
     token = _clean(os.getenv("TELEGRAM_BOT_TOKEN"))
-    if not token:
+    # 机器人只提供查询命令（已无推送），关掉它就不需要 token —— 纯网页面板可直接跑。
+    if not token and bot_enabled:
         raise SystemExit(
-            "TELEGRAM_BOT_TOKEN 未设置。请复制 .env.example 为 .env 并填写。"
+            "TELEGRAM_BOT_TOKEN 未设置。请复制 .env.example 为 .env 并填写，"
+            "或设 BOT_ENABLED=false 只运行网页面板。"
         )
     chat = _clean(os.getenv("TELEGRAM_CHAT_ID"))
     allowed_raw = _clean(os.getenv("ALLOWED_CHAT_IDS")) or chat
@@ -61,16 +64,13 @@ def load_config() -> Config:
             return default
 
     alert_min = _float("ALERT_MIN_USD", 10000)
-    alert_large = _float("ALERT_LARGE_USD", 50000)
     tg_proxy = _clean(os.getenv("TELEGRAM_PROXY")) or _clean(os.getenv("BOT_PROXY"))
 
     try:
         web_port = int(_clean(os.getenv("WEB_PORT")) or "8000")
     except ValueError:
         web_port = 8000
-    _falsey = ("0", "false", "no", "off")
     web_enabled = (_clean(os.getenv("WEB_ENABLED")) or "true").lower() not in _falsey
-    bot_enabled = (_clean(os.getenv("BOT_ENABLED")) or "true").lower() not in _falsey
 
     return Config(
         tg_token=token,
@@ -82,9 +82,7 @@ def load_config() -> Config:
         moralis_api_key=_clean(os.getenv("MORALIS_API_KEY")),
         poll_interval=poll,
         alert_min_usd=alert_min,
-        alert_large_usd=alert_large,
         db_path=_clean(os.getenv("DB_PATH")) or "wallets.db",
-        max_alerts_per_poll=10,
         bot_enabled=bot_enabled,
         web_enabled=web_enabled,
         web_host=_clean(os.getenv("WEB_HOST")) or "127.0.0.1",

@@ -1,5 +1,8 @@
-"""Entrypoint: runs the Telegram bot (with the auto-tracking poller) and the
-FastAPI dashboard together.
+"""Entrypoint: runs the FastAPI dashboard and (optionally) the Telegram bot.
+
+The bot only serves on-demand commands (/list, /balance, /history) — it does not
+push alerts. New-trade detection for the panel's unread badges runs inside the
+web app, so it works with the bot disabled.
 
 The bot runs in the main thread via PTB's ``run_polling`` (it owns the main
 event loop and signal handling). The web dashboard runs in a daemon thread with
@@ -19,7 +22,6 @@ from telegram.ext import Application, CommandHandler
 import bot as handlers
 from config import Config, load_config
 from db import WalletDB
-from tracker import poll_job
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,11 +64,6 @@ def build_application(config: Config, db: WalletDB) -> Application:
     app.add_handler(CommandHandler("balance", handlers.cmd_balance))
     app.add_handler(CommandHandler("history", handlers.cmd_history))
     app.add_error_handler(handlers.on_error)
-
-    # Auto-tracking poller.
-    app.job_queue.run_repeating(
-        poll_job, interval=config.poll_interval, first=15, name="poll"
-    )
     return app
 
 

@@ -24,6 +24,7 @@ from chains import portfolio as pf
 from chains.base import ActionsUnsupported, ChainError
 from config import Config
 from db import WalletDB
+from tracker import run_poller
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -98,9 +99,17 @@ def create_web_app(config: Config, db: WalletDB) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.http = httpx.AsyncClient()
+        # 新成交探测（面板红圈未读数）。跑在网页这边而不是机器人里，
+        # 这样不开 Telegram（BOT_ENABLED=false）红圈也照常工作。
+        poller = asyncio.create_task(run_poller(config, app.state.http, db))
         try:
             yield
         finally:
+            poller.cancel()
+            try:
+                await poller
+            except asyncio.CancelledError:
+                pass
             await app.state.http.aclose()
 
     app = FastAPI(
