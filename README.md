@@ -1,8 +1,10 @@
 # Wallet Tracker · 链上钱包跟踪器
 
 跟踪 **EVM（ETH/BSC/Base/Arbitrum/Polygon/Optimism）、Solana、比特币** 钱包的
-买入 / 卖出 / 兑换 / 转账，查看余额，维护地址清单，并在监控的钱包有新动作时
-自动推送 **Telegram 提醒**。同时附带一个 **Arkham 风格的深色网页面板**。
+买入 / 卖出 / 兑换 / 转账，查看余额，维护地址清单，并在监控的钱包有新成交时
+在面板上亮起**红圈未读提醒**。同时附带一个 **Arkham 风格的深色网页面板**。
+
+> 消息推送功能已取消：机器人不再主动发送提醒，新成交只在网页面板上以红圈数字呈现。
 
 全部基于**免费**数据源：Etherscan V2 / Helius 免费档 / mempool.space（免 key）。
 
@@ -15,14 +17,15 @@
 | 行动轨迹 | 归一化为 买入/卖出/兑换/转入/转出，含金额、对手方、区块浏览器链接 |
 | 余额信息 | 原生币余额；Solana 含 SPL 代币持仓；BTC 含历史交易数 |
 | 地址清单 | 增删查，按链分组，支持备注 |
-| 自动跟踪 + TG 提醒 | 定时轮询每个地址，发现新交易即推送到 Telegram |
+| 自动跟踪 + 红圈提醒 | 定时扫描每个地址，发现新成交即在面板对应地址上累加红圈未读数 |
 | 网页面板 | DeBank 风浅色 UI：清单 / 持仓 / 动作流，**动作流自动刷新（30s）**，支持快速查询 |
 | USD 估值 | 原生币 + 稳定币按 CoinGecko 免费价折算总值（无需 key） |
 | 盈亏估算 | 从近期可见交易估算已实现盈亏（买入成本 vs 卖出回款），仅供参考 |
 
 两个入口共用同一套后端与数据库：
-- **Telegram 机器人**：用命令管理清单、查余额、查动作，并接收自动提醒。
-- **网页面板**：浏览器里可视化查看，默认仅监听本机 `127.0.0.1:8000`。
+- **网页面板**：浏览器里可视化查看，默认仅监听本机 `127.0.0.1:8000`。新成交红圈提醒在这里。
+- **Telegram 机器人**（可选）：用命令管理清单、查余额、查动作。**不推送消息**，
+  不需要时设 `BOT_ENABLED=false` 即可完全不用 Telegram（连 token 都不用填）。
 
 ---
 
@@ -59,16 +62,16 @@ python main.py
 
 打开 <http://127.0.0.1:8000> 查看网页面板；在 Telegram 里给机器人发 `/start`。
 
-### 自动推送提醒（Telegram）
+### 新成交红圈提醒（网页面板）
 
-跟踪清单里的钱包一有新成交，会自动推送到 Telegram：买入/卖出、开多/开空/平多/平空、
-平仓已实现盈亏，大额（≥ `ALERT_LARGE_USD`）标 🔥，并带上钱包等级（巨鲸/超大户/…）。
+跟踪清单里的钱包一有新成交，对应地址的头像上会出现红圈数字（类似微信未读），
+点开该地址查看后自动清零。
 
-- 每 `POLL_INTERVAL` 秒轮询一次（默认 60s），只推「新」成交，不重复。
-- `ALERT_MIN_USD`（默认 $10K）以下的小额不推，避免刷屏。
-- **国内必看**：`api.telegram.org` 被墙，需在 `.env` 设 `TELEGRAM_PROXY`
-  （如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`）+ `BOT_ENABLED=true`。
-  只用网页不推送时保持 `BOT_ENABLED=false` 即可。
+- 每 `POLL_INTERVAL` 秒扫描一次（默认 60s），只算「新」成交，不重复计数。
+- `ALERT_MIN_USD`（默认 $10K）以下的小额不计入，避免刷屏。
+- 扫描跑在网页服务里，**与 Telegram 无关**：设 `BOT_ENABLED=false` 红圈照常工作。
+- **国内看这里**：只用网页面板的话不需要任何代理；仅当要用机器人查询命令时，
+  才需设 `TELEGRAM_PROXY` + `BOT_ENABLED=true`（`api.telegram.org` 被墙）。
 
 ### 免费 API Key 在哪拿（各 1 分钟）
 
@@ -130,12 +133,12 @@ sudo journalctl -u wallet-tracker -f   # 看日志
 ```
 main.py            入口：同时启动 TG 机器人 + 网页面板
 bot.py             Telegram 命令处理
-tracker.py         自动跟踪轮询 + 提醒推送
+tracker.py         新成交扫描（驱动面板红圈未读数）
 web.py             FastAPI 接口
 static/index.html  深色网页面板（单文件）
 config.py          环境配置
 db.py              SQLite 清单 + 跟踪游标
-formatting.py      Telegram 消息排版
+formatting.py      Telegram 命令回复排版
 analytics.py       USD 估值 + 盈亏估算
 chains/            链适配层
   base.py          统一数据模型 / 接口

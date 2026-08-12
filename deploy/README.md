@@ -4,8 +4,8 @@
 Cloudflare Tunnel 暴露成 `https://pocket.arknove.com`。
 
 **为什么放 VPS（而不是家里/国内服务器）**
-- 海外节点直连 Hyperliquid / Telegram / Moralis / CoinGecko —— 排行榜不再超时，
-  Telegram **不用配代理**（`TELEGRAM_PROXY` 留空即可）。
+- 海外节点直连 Hyperliquid / Moralis / CoinGecko —— 排行榜不再超时。
+  （消息推送已取消；若要用机器人查询命令，海外节点也**不用配代理**，`TELEGRAM_PROXY` 留空即可。）
 - 有公网 IP，配 Cloudflare 简单；Tunnel 方案还能不开任何入站端口、隐藏真实 IP。
 - VPS 常年在线。
 
@@ -35,10 +35,10 @@ nano .env
 
 `.env` 关键项（海外 VPS）：
 ```ini
-TELEGRAM_BOT_TOKEN=你的bot token
+TELEGRAM_BOT_TOKEN=你的bot token   # 只用网页面板可留空
 TELEGRAM_CHAT_ID=你的chat id
 TELEGRAM_PROXY=                 # 海外直连，留空！不要填代理
-BOT_ENABLED=true               # 要 TG 推送就开
+BOT_ENABLED=false              # 已取消推送；只用网页面板设 false（红圈提醒不受影响）
 ETHERSCAN_API_KEY=...
 MORALIS_API_KEY=...
 HELIUS_API_KEY=...             # 需要 Solana 才填
