@@ -24,6 +24,9 @@ class Config:
     moralis_api_key: str
     poll_interval: int           # seconds between new-trade scans
     alert_min_usd: float         # ignore trades below this USD value (anti-spam)
+    alert_large_usd: float       # mark trades at/above this USD value as 大额 🔥
+    push_prefix: str             # only push wallets whose label starts with this ("" = all)
+    push_merge_window: int       # merge consecutive same coin+direction trades within N seconds
     db_path: str
     bot_enabled: bool            # run the Telegram bot commands (set false for web-only)
     web_enabled: bool            # serve the FastAPI dashboard alongside the bot
@@ -64,7 +67,17 @@ def load_config() -> Config:
             return default
 
     alert_min = _float("ALERT_MIN_USD", 10000)
+    alert_large = _float("ALERT_LARGE_USD", 50000)
     tg_proxy = _clean(os.getenv("TELEGRAM_PROXY")) or _clean(os.getenv("BOT_PROXY"))
+
+    # 只推送名称以此前缀开头的钱包（默认 ZR），其余只在面板亮红圈。留空=全推。
+    push_prefix = _clean(os.getenv("PUSH_PREFIX"))
+    if not os.getenv("PUSH_PREFIX"):
+        push_prefix = "ZR"
+    try:
+        push_merge_window = int(_clean(os.getenv("PUSH_MERGE_WINDOW")) or "300")
+    except ValueError:
+        push_merge_window = 300
 
     try:
         web_port = int(_clean(os.getenv("WEB_PORT")) or "8000")
@@ -82,6 +95,9 @@ def load_config() -> Config:
         moralis_api_key=_clean(os.getenv("MORALIS_API_KEY")),
         poll_interval=poll,
         alert_min_usd=alert_min,
+        alert_large_usd=alert_large,
+        push_prefix=push_prefix,
+        push_merge_window=push_merge_window,
         db_path=_clean(os.getenv("DB_PATH")) or "wallets.db",
         bot_enabled=bot_enabled,
         web_enabled=web_enabled,
